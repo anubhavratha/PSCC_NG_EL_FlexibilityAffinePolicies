@@ -137,12 +137,12 @@ function unidir_deterministic_redispatch(m1_elprod, m1_elflows, m1_windgen, m1_n
     @info("Deterministic RT EL Redispatch Model status ---> $(status)")
 
     return status,JuMP.objective_value(m_rt), round.(JuMP.value.(r_act), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2), JuMP.value.(q_in_adj), JuMP.value.(q_out_adj), JuMP.value.(q_adj), JuMP.value.(h_rt), JuMP.value.(pr_adj), JuMP.value.(g_adj)
-
 end
+#Testing the function, single run only
 #(m1_rd_status, m1_rd_cost, m1_rd_p_adj, m1_lshed, m1_wspill, m1_rd_qin_adj, m1_rd_qout_adj, m1_rd_q_adj, m1_rd_h_adj, m1_rd_pr_adj) = unidir_deterministic_redispatch(m1_elprod, m1_elflows, m1_windgen, m1_ng_lmp, m1_ng_pre, m1_ng_flows, 100)
 #Redispatch in each of the scenarios and pressure adjustments
 
-
+#running for multiple scenarios
 m1_scen_res=DataFrame(ScenNum=Int[], CostRedispatch=Float64[], WindSpilled=Float64[], LoadShed=Float64[])
 (m1_status, m1_cost, m1_el_lmp, m1_elflows, m1_elprod, m1_windgen, m1_vangs, m1_ng_inflows, m1_ng_outflows, m1_ng_flows, m1_linepack_amount, m1_ng_pre, m1_ng_prod, m1_ng_lmp) = unidir_deterministic_SOCP_EL_NG(250)
 for Scenario = 1:50
@@ -292,10 +292,11 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     return Δ, status, JuMP.objective_value(m2_rt), round.(JuMP.value.(p_rt), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2), round.(JuMP.value.(θ_rt), digits=2), round.(JuMP.value.(g_shed), digits=2), round.(JuMP.value.(pr_rt), digits=2), round.(JuMP.value.(g_rt), digits=2), round.(JuMP.value.(q_in_rt), digits=2), round.(JuMP.value.(q_out_rt), digits=2)
 
 end
-#Testing the function - single run
+#Testing the function - single run only
 (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt) = undir_DRCC_rt_operation(1, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 1)
 
 #=
+#running for multiple scenarios
 m2_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], ELLoadShed=Float64[], NGLoadShed=Float64[])
 InSample = 1
 for Scenario = 1:100
@@ -318,7 +319,9 @@ end
 
 ##======== OOS Simulation for No Natural Gas Case, M0 ===========##
 include("M0_PowerGens_Affine_Policies_DRCC.jl")
+#uncomment for M0 copper plate model
 #(m0_status, m0_cost, m0_pvals, m0_alphavals, m0_el_lmp_da, m0_el_lmp_rt) = DRCC_EL_PolicyReserves_CopperPlate()
+#uncomment for M0 networked power system model
 (m0_status, m0_cost, m0_pvals, m0_alphavals, m0_el_lmp_da, m0_el_lmp_rt) = DRCC_EL_PolicyReserves()
 
 function DRCC_EL_Reserves_OOS(InSample, w_hat, m0_el_prod, m0_el_alpha, Scenario)
@@ -349,21 +352,20 @@ function DRCC_EL_Reserves_OOS(InSample, w_hat, m0_el_prod, m0_el_alpha, Scenario
     @constraint(m0_rt, ϕ_l_shed[elnode=1:Nel_bus, t=1:Nt], 0 <= l_shed[elnode,t] <= elBus_data[elnode].elLoadShare*hourly_demand[t,2])
     @constraint(m0_rt, ϕ_w_spill[i=1:Nw, t=1:Nt], 0 <= w_spill[i,t] <= wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1])
 
+    # Uncomment the constraints below for networked system
     @constraint(m0_rt, el_f_def[l=1:Nel_line, t=1:Nt], f_rt[l,t] == ν[elLine_data[l].b_f,elLine_data[l].b_t]*(θ_rt[elLine_data[l].b_f,t] - θ_rt[elLine_data[l].b_t,t]))
     @constraint(m0_rt, el_f_lim_rt[l=1:Nel_line,t=1:Nt], -f̅[elLine_data[l].b_f, elLine_data[l].b_t] <= f_rt[l,t] <= f̅[elLine_data[l].b_f, elLine_data[l].b_t])
-
-
     @constraint(m0_rt, λ_el_rt[elnode=1:Nel_bus, t=1:Nt], sum(p_rt[i,t] for i in 1:Np if gen_data[i].elBusNum==elnode)
                                                         + sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i in 1:Nw if wind_data[i].elBusNum==elnode)
                                                         - sum(w_spill[i,t] for i=1:Nw if wind_data[i].elBusNum==elnode)
                                                         + l_shed[elnode,t]
                                                         - elBus_data[elnode].elLoadShare*hourly_demand[t,2]
                                                         == sum(B[elnode,r]*θ_rt[r,t] for r=1:Nel_bus))
-
-    #5. El Reference bus
     @constraint(m0_rt, ref_el_rt[t=1:Nt], θ_rt[refbus, t] == 0)
 
-    #=
+
+
+    #= #Uncomment for M0 copper plate system
     @constraint(m0_rt, λ_el_rt_nonw[t=1:Nt], sum(p_rt[i,t] for i in 1:Np)
                                                 + sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i in 1:Nw)
                                                 - sum(w_spill[i,t] for i=1:Nw)
@@ -381,10 +383,10 @@ function DRCC_EL_Reserves_OOS(InSample, w_hat, m0_el_prod, m0_el_alpha, Scenario
     return Δ, status, JuMP.objective_value(m0_rt), round.(JuMP.value.(p_rt), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2)
 end
 
-#Testing the function - single run
+#Testing the function - single run only
 #(Δ, m0_rt_status, m0_rt_cost, m0_rt_p_adj, m0_lshed, m0_wspill) = DRCC_EL_Reserves_OOS(1, w_hat, m0_pvals, m0_alphavals, 2)
 
-
+#running for multiple scenarios
 m0_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], LoadShed=Float64[])
 InSample = 1
 for Scenario = 1:100

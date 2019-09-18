@@ -39,10 +39,10 @@ Nt = 24     #Time periods for Simulation Horizon
 wind_buses = [5,7]
 
 #Minimum value ~ 0.025
-ϵ_i = 0.2  #risk tolerance factor for generators for CC violation
+ϵ_i = 0.05  #risk tolerance factor for generators for CC violation
 z_i = ((1-ϵ_i)/ϵ_i)     #Fixed multiplier for risk tolerance
 
-ϵ_g = 0.2
+ϵ_g = 0.05
 z_g = ((1-ϵ_g)/ϵ_g)
 z_mu = z_nr = z_g
 
@@ -129,7 +129,6 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
     #5. El Reference bus
     @constraint(m,ref_el_θ[t=1:Nt], θ[refbus,t] == 0)
     @constraint(m, ref_el_κ[t=1:Nt], κ[refbus,t] == 0)
-
 
     ###-----NG Constraints----###
     #1. Gas Producers Constraints
@@ -253,6 +252,7 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
 
 end
 
+#=
 (status, cost, el_prod, el_alpha, el_lmp_da, el_lmp_rt, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_inflows, ng_gamma_in, ng_outflows, ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG()
 #(status, cost, el_prod, el_alpha, el_lmp, vangs) = unidir_DRCC_McCormick_SOCP_EL_NG()
 println("EL + NG System Cost:", cost)
@@ -304,3 +304,4 @@ end
 println("Total Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5]))
 println("RMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line)))
 println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_lin[:,4]))))
+=#

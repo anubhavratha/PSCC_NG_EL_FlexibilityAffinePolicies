@@ -35,9 +35,9 @@ Nel_bus = length(elBus_data)    #number of power buses (elnode)
 Nng_line = length(ngLine_data)  #number of gas pipelines (pl)
 Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
-Nt = 24                         #Time periods
+Nt = 24                     #Time periods
 
-C_shed = 10000
+C_shed = 2000
 C_spill = 0
 
 
@@ -161,7 +161,7 @@ end
 =#
 
 ## ========================== REDISPATCH FOR DRCC: M2 ================================= ##
-
+#=
 include("M2a_DRCC_McCormick_Chebyshev.jl")
 (status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG()
 
@@ -172,7 +172,7 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     elseif InSample == 0
         wind_simdata = wind_realizations
     end
-    Nt=1
+    Nt=24
     Δ = []     #Realized net system deviation
     for t=1:Nt
         push!(Δ, (sum(w_hat[i,t] for i in 1:Nw) - (sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i = 1:Nw))))
@@ -200,11 +200,11 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     @variable(m2_rt, g_shed[1:Nng_bus, t=1:Nt])
 
     #Slack variables
-    @variable(m2_rt, slack_1[1:Nng_line, t=1:Nt])
+    #@variable(m2_rt, slack_1[1:Nng_line, t=1:Nt])
 
     #@objective(m2_rt, Min, 1)
-    #@objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1: Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) + sum(C_shed*g_shed[gnode,t] for gnode = 1:Nng_bus) + sum(1e3*slack_1[pl,t] for pl=1:Nng_line) for t=1:Nt))
-    @objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1: Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) for t=1:Nt))
+    @objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1: Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) + sum(100*g_shed[gnode,t] for gnode = 1:Nng_bus) for t=1:Nt))
+    #@objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1:Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) for t=1:Nt))
 
     ###-----EL Constraints----###
     @constraint(m2_rt, ϕ_r_act[i=1:Np, t=1:Nt], p_rt[i,t] == m2_el_prod[i,t] + Δ[t]*m2_el_alpha[i,t])
@@ -216,8 +216,8 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
 
 
     @constraint(m2_rt, λ_el_rt[elnode=1:Nel_bus, t=1:Nt], sum(p_rt[i,t] for i in 1:Np if gen_data[i].elBusNum==elnode)
-                                                        + sum(wind_realizations[(wind_realizations.WFNum.==i) .& (wind_realizations.ScenNum .== Scenario), t][1] for i in 1:Nw if wind_data[i].elBusNum==elnode)
-                                                        #- sum(w_spill[i,t] for i=1:Nw if wind_data[i].elBusNum==elnode)
+                                                        + sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i in 1:Nw if wind_data[i].elBusNum==elnode)
+                                                        - sum(w_spill[i,t] for i=1:Nw if wind_data[i].elBusNum==elnode)
                                                         + l_shed[elnode,t]
                                                         - elBus_data[elnode].elLoadShare*hourly_demand[t,2]
                                                         == sum(B[elnode,r]*θ_rt[r,t] for r=1:Nel_bus))
@@ -225,12 +225,13 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     #5. El Reference bus
     @constraint(m2_rt, ref_el_rt[t=1:Nt], θ_rt[refbus, t] == 0)
 
-    #=
+
     ###-----NG Constraints----###
     @constraint(m2_rt, ϕ_ng_rt[k=1:Ng, t=1:Nt], g_rt[k,t] == m2_ng_prod[k,t] + Δ[t]*m2_ng_beta[k,t])
+    @constraint(m2_rt, ϕ_ng_lshed[gnode=1:Nng_bus, t=1:Nt], 0 <= g_shed[gnode,t] <= ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
     #2. Nodal Pressure Constraints
-    @constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] <= m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
+    @constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
 
     #3. Pipelines with Compressors
 
@@ -240,6 +241,7 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
         end
     end
 
+    #=
     #5. Definition of average flow in a pipeline
     @constraint(m2_rt, q_value_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == m2_ng_flows[pl,t] + Δ[t]*m2_ng_gamma[pl,t])
     @constraint(m2_rt, q_in_value_rt[pl=1:Nng_line, t=1:Nt], q_in_rt[pl,t] == m2_ng_inflows[pl,t] + Δ[t]*m2_ng_gamma_in[pl,t])
@@ -250,12 +252,12 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     #6a. Weymouth equation - convex relaxation of equality into a SOC, ignoring the concave part of the cone
     #uncomment if using MOSEK - SecondOrderCone special formulation
     #@constraint(m2_rt, wm_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t]^2 ==  (ngLine_data[pl].K_mu)^2*(pr_rt[ngLine_data[pl].ng_f,t]^2  - pr_rt[ngLine_data[pl].ng_t,t]^2))
-    @constraint(m2_rt, wm_soc_rt[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t] + slack_1[pl,t]] in SecondOrderCone())
+    @constraint(m2_rt, wm_soc_rt[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
+
 
 
     #7. Linepack Definition
     @constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]))
-
 
     #8. Linepack Operation Dynamics Constraints: for t=1, for t>1 and for t=T
     for pl=1:Nng_line
@@ -271,16 +273,14 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
             end
         end
     end
-
-
-
+    =#
     #9. Nodal NG balance
-    @constraint(m2_rt, λ_ng_rt[gnode=1:Nng_bus, t=1:Nt], sum(g_rt[k,t] for k in 1:Ng if ng_prods_data[k].ngProdBusNum==gnode) - sum(gen_data[i].ngConvEff*p_rt[i,t] for i in 1:Np if gen_data[i].ngBusNum==gnode)
-                                                + (sum(q_in_rt[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_f==gnode) - sum(q_out_rt[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_t==gnode))
+    @constraint(m2_rt, λ_ng_rt[gnode=1:Nng_bus, t=1:Nt], sum(g_rt[k,t] for k in 1:Ng if ng_prods_data[k].ngProdBusNum==gnode)
+                                                - sum(gen_data[i].ngConvEff*p_rt[i,t] for i in 1:Np if gen_data[i].ngBusNum==gnode)
+                                                - (sum(q_in_rt[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_f==gnode) - sum(q_out_rt[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_t==gnode))
                                                 + g_shed[gnode,t]
                                                 == ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
-=#
 
     @time optimize!(m2_rt)
     status = termination_status(m2_rt)
@@ -289,27 +289,115 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
 
     @info("DRCC RT EL Redispatch Model status ---> $(status)")
 
+    return Δ, status, JuMP.objective_value(m2_rt), round.(JuMP.value.(p_rt), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2), round.(JuMP.value.(θ_rt), digits=2), round.(JuMP.value.(g_shed), digits=2), round.(JuMP.value.(pr_rt), digits=2), round.(JuMP.value.(g_rt), digits=2), round.(JuMP.value.(q_in_rt), digits=2), round.(JuMP.value.(q_out_rt), digits=2)
 
-    return Δ, status, JuMP.objective_value(m2_rt), round.(JuMP.value.(p_rt), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2), round.(JuMP.value.(θ_rt), digits=2)
 end
 #Testing the function - single run
-(Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs) = undir_DRCC_rt_operation(1, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 1)
+(Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt) = undir_DRCC_rt_operation(1, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 1)
 
 #=
-m2_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], LoadShed=Float64[])
+m2_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], ELLoadShed=Float64[], NGLoadShed=Float64[])
 InSample = 1
-for Scenario = 1
-    (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_rt, m2_lshed, m2_wspill) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
+for Scenario = 1:100
+    (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
     println("Actual System Deviation is: ", Δ)
     if m2_rd_status != MOI.OPTIMAL
         println("Not RT feasible for Scenario =", Scenario)
-        snapshot=[Scenario, Inf, 0, 0]
+        snapshot=[Scenario, Inf, 0, 0, 0]
         push!(m2_scen_res,snapshot)
     elseif m2_rd_status == MOI.OPTIMAL
         print(m2_lshed)
-        snapshot=[Scenario, m2_rd_cost, sum(m2_wspill), sum(m2_lshed[:,1])]
+        snapshot=[Scenario, m2_rd_cost, sum(m2_wspill), sum(m2_lshed), sum(m2_gshed)]
         push!(m2_scen_res,snapshot)
     end
 end
 @show m2_scen_res
 =#
+=#
+
+
+##======== OOS Simulation for No Natural Gas Case, M0 ===========##
+include("M0_PowerGens_Affine_Policies_DRCC.jl")
+#(m0_status, m0_cost, m0_pvals, m0_alphavals, m0_el_lmp_da, m0_el_lmp_rt) = DRCC_EL_PolicyReserves_CopperPlate()
+(m0_status, m0_cost, m0_pvals, m0_alphavals, m0_el_lmp_da, m0_el_lmp_rt) = DRCC_EL_PolicyReserves()
+
+function DRCC_EL_Reserves_OOS(InSample, w_hat, m0_el_prod, m0_el_alpha, Scenario)
+    if InSample == 1
+        wind_simdata = wind_traindata
+    elseif InSample == 0
+        wind_simdata = wind_realizations
+    end
+
+    Δ = []     #Realized net system deviation
+    for t=1:Nt
+        push!(Δ, (sum(w_hat[i,t] for i in 1:Nw) - (sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i = 1:Nw))))
+    end
+
+    #Check Feasibility of line-flows
+    m0_rt = Model(with_optimizer(Mosek.Optimizer, MSK_IPAR_LOG=1, MSK_IPAR_INTPNT_SOLVE_FORM=MSK_SOLVE_PRIMAL, MSK_DPAR_INTPNT_CO_TOL_REL_GAP=1.0e-10, MSK_IPAR_PRESOLVE_ELIMINATOR_MAX_NUM_TRIES = 0,  MSK_IPAR_INFEAS_REPORT_AUTO=MSK_ON))
+
+    #EL adjustment variables
+    @variable(m0_rt, p_rt[1:Np, 1:Nt])
+    @variable(m0_rt, l_shed[1:Nel_bus, 1:Nt])
+    @variable(m0_rt, w_spill[1:Nw, 1:Nt])
+    @variable(m0_rt, f_rt[1:Nel_line, 1:Nt])
+    @variable(m0_rt, θ_rt[1:Nel_bus, 1:Nt])
+
+    @objective(m0_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1: Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) for t=1:Nt))
+
+    @constraint(m0_rt, ϕ_r_act[i=1:Np, t=1:Nt], p_rt[i,t] == m0_el_prod[i,t] + Δ[t]*m0_el_alpha[i,t])
+    @constraint(m0_rt, ϕ_l_shed[elnode=1:Nel_bus, t=1:Nt], 0 <= l_shed[elnode,t] <= elBus_data[elnode].elLoadShare*hourly_demand[t,2])
+    @constraint(m0_rt, ϕ_w_spill[i=1:Nw, t=1:Nt], 0 <= w_spill[i,t] <= wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1])
+
+    @constraint(m0_rt, el_f_def[l=1:Nel_line, t=1:Nt], f_rt[l,t] == ν[elLine_data[l].b_f,elLine_data[l].b_t]*(θ_rt[elLine_data[l].b_f,t] - θ_rt[elLine_data[l].b_t,t]))
+    @constraint(m0_rt, el_f_lim_rt[l=1:Nel_line,t=1:Nt], -f̅[elLine_data[l].b_f, elLine_data[l].b_t] <= f_rt[l,t] <= f̅[elLine_data[l].b_f, elLine_data[l].b_t])
+
+
+    @constraint(m0_rt, λ_el_rt[elnode=1:Nel_bus, t=1:Nt], sum(p_rt[i,t] for i in 1:Np if gen_data[i].elBusNum==elnode)
+                                                        + sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i in 1:Nw if wind_data[i].elBusNum==elnode)
+                                                        - sum(w_spill[i,t] for i=1:Nw if wind_data[i].elBusNum==elnode)
+                                                        + l_shed[elnode,t]
+                                                        - elBus_data[elnode].elLoadShare*hourly_demand[t,2]
+                                                        == sum(B[elnode,r]*θ_rt[r,t] for r=1:Nel_bus))
+
+    #5. El Reference bus
+    @constraint(m0_rt, ref_el_rt[t=1:Nt], θ_rt[refbus, t] == 0)
+
+    #=
+    @constraint(m0_rt, λ_el_rt_nonw[t=1:Nt], sum(p_rt[i,t] for i in 1:Np)
+                                                + sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i in 1:Nw)
+                                                - sum(w_spill[i,t] for i=1:Nw)
+                                                + sum(l_shed[elnode,t] for elnode=1:Nel_bus)
+                                                ==sum(elBus_data[elnode].elLoadShare*hourly_demand[t,2] for elnode=1:Nel_bus)) =#
+
+
+    @time optimize!(m0_rt)
+    status = termination_status(m0_rt)
+    println(status)
+    println(raw_status(m0_rt))
+
+    @info("DRCC RT EL Only Redispatch ---> $(status)")
+
+    return Δ, status, JuMP.objective_value(m0_rt), round.(JuMP.value.(p_rt), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2)
+end
+
+#Testing the function - single run
+#(Δ, m0_rt_status, m0_rt_cost, m0_rt_p_adj, m0_lshed, m0_wspill) = DRCC_EL_Reserves_OOS(1, w_hat, m0_pvals, m0_alphavals, 2)
+
+
+m0_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], LoadShed=Float64[])
+InSample = 1
+for Scenario = 1:100
+    (Δ, m0_rt_status, m0_rt_cost, m0_rt_p_adj, m0_lshed, m0_wspill) = DRCC_EL_Reserves_OOS(InSample, w_hat,  m0_pvals, m0_alphavals, Scenario)
+    println("Actual System Deviation is: ", Δ)
+    if m0_rt_status != MOI.OPTIMAL
+        println("Not RT feasible for Scenario =", Scenario)
+        snapshot=[Scenario, Inf, 0, 0]
+        push!(m0_scen_res,snapshot)
+    elseif m0_rt_status == MOI.OPTIMAL
+        print(m0_lshed)
+        snapshot=[Scenario, m0_rt_cost, sum(m0_wspill), sum(m0_lshed)]
+        push!(m0_scen_res,snapshot)
+    end
+end
+@show m0_scen_res

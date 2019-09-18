@@ -6,7 +6,8 @@ include("CS1_24bus/CS1_data_load_script_PSCC.jl")
 (elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data) = load_data()
 
 hourly_demand = CSV.read("CS1_24bus/data/24el_12ng/hourlyDemand.csv")
-wind_factors = CSV.read("CS1_24bus/data/24el_12ng/wind_factors.csv")
+w_hat = CSV.read("CS1_24bus/data/UncertaintyMoments/PSCC_Point_Forecast_Values.csv", header=false)        #Point forecast
+
 
 Np = length(gen_data)           #number of generators
 Ng = length(ng_prods_data)      #number of gas producers
@@ -19,11 +20,13 @@ Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 Nt = 24       #Time periods for Simulation Horizon
 
 
-function unidir_deterministic_SOCP_EL_NG()
+function unidir_deterministic_SOCP_EL_NG(MRRval)
     m = Model(with_optimizer(Mosek.Optimizer, MSK_IPAR_LOG=1, MSK_IPAR_INTPNT_SOLVE_FORM=MSK_SOLVE_PRIMAL, MSK_DPAR_INTPNT_CO_TOL_REL_GAP=1.0e-10, MSK_IPAR_PRESOLVE_ELIMINATOR_MAX_NUM_TRIES = 0))
 
     #EL Variables
     @variable(m, p[1:Np, 1:Nt])        #Production from power generators
+    @variable(m, r_up[1:Np, 1:Nt])     #Upwards reserve procured
+    @variable(m, r_dn[1:Np, 1:Nt])     #Downwards reserve procured
     @variable(m, w[1:Nw, 1:Nt])        #Production from wind farms
     @variable(m, f[1:Nel_line, 1:Nt])  #Flow in power lines
     @variable(m, θ[1:Nel_bus, 1:Nt])   #Bus angles
@@ -38,15 +41,22 @@ function unidir_deterministic_SOCP_EL_NG()
 
     #OBJECTIVE function
     #Uncomment for co-optimization of el and ng
-    @objective(m, Min, sum(sum(p[i,t]*gen_data[i].c for i=1:Np if gen_data[i].ngBusNum==0) + sum(g[k,t]*ng_prods_data[k].C_gas for k= 1:Ng) for t=1:Nt))
+    @objective(m, Min, sum(sum(p[i,t]*gen_data[i].c for i=1:Np if gen_data[i].ngBusNum==0) + sum((r_dn[i,t] + r_up[i,t])*gen_data[i].c*0.2 for i=1:Np)  + sum(g[k,t]*ng_prods_data[k].C_gas for k= 1:Ng) for t=1:Nt))
     #uncomment for just EL
     #@objective(m, Min, sum(sum(p[i,t]*gen_data[i].c for i=1:Np if gen_data[i].ngBusNum==0) for t=1:Nt))
 
     ###-----EL Constraints----###
     #1. All generator Power Limits
     @constraint(m, ϕ_p[i=1:Np, t=1:Nt], gen_data[i].p̲ <= p[i,t] <= gen_data[i].p̅)
+    @constraint(m, ϕ_p_res_dn[i=1:Np, t=1:Nt], p[i,t] - r_dn[i,t] >= gen_data[i].p̲)
+    @constraint(m, ϕ_p_res_up[i=1:Np, t=1:Nt], p[i,t] + r_up[i,t] <= gen_data[i].p̅)
+    @constraint(m, ϕ_res_up[i=1:Np, t=1:Nt], 0 <= r_up[i,t] <= 0.4*gen_data[i].p̅)
+    @constraint(m, ϕ_res_dn[i=1:Np, t=1:Nt], 0 <= r_dn[i,t] <= 0.4*gen_data[i].p̅)
+    @constraint(m, mrr_dn[t=1:Nt], sum(r_dn[i,t] for i=1:Np) >= MRRval)
+    @constraint(m, mrr_up[t=1:Nt], sum(r_up[i,t] for i=1:Np) >= MRRval)
+
     #2. Wind Production bound by Capacity and Wind Factors
-    @constraint(m, ϕ_w[j=1:Nw, t=1:Nt], 0 <= w[j,t] <= wind_data[j].Ŵ*wind_factors[t,j+1])
+    @constraint(m, ϕ_w[j=1:Nw, t=1:Nt], 0 <= w[j,t] <= w_hat[j,t])
     #3. Definition of power flows and flow limits in a line
     @constraint(m, el_f_def[l=1:Nel_line, t=1:Nt], f[l,t] == ν[elLine_data[l].b_f,elLine_data[l].b_t]*(θ[elLine_data[l].b_f,t] - θ[elLine_data[l].b_t,t]))
     @constraint(m, el_f_lim[l=1:Nel_line,t=1:Nt], -f̅[elLine_data[l].b_f, elLine_data[l].b_t] <= f[l,t] <= f̅[elLine_data[l].b_f, elLine_data[l].b_t])
@@ -110,21 +120,33 @@ function unidir_deterministic_SOCP_EL_NG()
     println(status)
     println(raw_status(m))
 
-    #println(wm_soc[:,1])
     @info("Deterministic Model status ---> $(status)")
+
+    #Structuring Return Values into DataFrames
+    #Power Producers - genType takes non-zero values only for GasFiredPowerPlants
+    el_prod=DataFrame(gen=Int[], genType=Int[], hour=Int[], p=Float64[], r_up=Float64[], r_dn=Float64[])
+    for i=1:Np
+        for t=1:Nt
+            snapshot=[gen_data[i].ind, gen_data[i].ngBusNum, t, JuMP.value(p[i]), JuMP.value(r_up[i]), JuMP.value(r_dn[i])]
+            push!(el_prod,snapshot)
+        end
+    end
+
+
     #uncomment if solving ng+el system
-    return status,JuMP.objective_value(m),JuMP.dual.(λ_el), JuMP.value.(f), round.(JuMP.value.(p),digits=2),JuMP.value.(w), JuMP.value.(θ), JuMP.value.(q_in), JuMP.value.(q_out), JuMP.value.(q), JuMP.value.(h), JuMP.value.(pr), JuMP.value.(g), round.(JuMP.dual.(λ_ng),digits=2)
+    return status, JuMP.objective_value(m), JuMP.dual.(λ_el), JuMP.value.(f), el_prod, JuMP.value.(w), JuMP.value.(θ), JuMP.value.(q_in), JuMP.value.(q_out), JuMP.value.(q), JuMP.value.(h), JuMP.value.(pr), JuMP.value.(g), round.(JuMP.dual.(λ_ng),digits=2)
     #Uncomment if solving only el system
     #return status,JuMP.objective_value(m),JuMP.dual.(λ_el), JuMP.value.(f), round.(JuMP.value.(p),digits=2),JuMP.value.(w), JuMP.value.(θ)
 end
 
 #uncomment if solving ng+el system
-(status, cost, el_lmp, elflows, elprod, windgen, vangs, ng_inflows, ng_outflows, ng_flows, linepack_amount, ng_pre, ng_prod, ng_lmp) = unidir_deterministic_SOCP_EL_NG()
+(status, cost, el_lmp, elflows, elprod, windgen, vangs, ng_inflows, ng_outflows, ng_flows, linepack_amount, ng_pre, ng_prod, ng_lmp) = unidir_deterministic_SOCP_EL_NG(300)
 #Uncomment if solving only el system
 #(status,cost,el_lmp, elflows, elprod, windgen, vangs) = unidir_deterministic_SOCP_EL_NG()
-println(cost)
+#println(cost)
 
-#=
+
+
 #calculate quality of exactness of approximation
 wm_exact=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
 for hour = 1:Nt
@@ -138,4 +160,3 @@ end
 println("Total Absolute Error:" , sum(wm_exact[:,5]))
 println("RMS Error:", sqrt(sum(wm_exact[:,5])/(Nt+Nng_line)))
 println("NRMS Error:", sqrt(sum(wm_exact[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact[:,4]))))
-=#

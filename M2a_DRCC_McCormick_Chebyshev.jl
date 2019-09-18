@@ -1,6 +1,7 @@
 #Model M2a: [Incomplete] DRCC Co-optimization with Chebyshev Inequality : Ignoring Concave part of the Weymouth equations
 # Yet to come: McCormick Relaxation for the linear terms of uncertainty
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
+using DataFrames, Statistics
 
 
 # Case Study 1: 24el + 12ng Bus System : Prepare and load data
@@ -34,21 +35,28 @@ Nel_bus = length(elBus_data)    #number of power buses (elnode)
 Nng_line = length(ngLine_data)  #number of gas pipelines (pl)
 Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
-Nt = 24       #Time periods for Simulation Horizon
+Nt = 24     #Time periods for Simulation Horizon
 wind_buses = [5,7]
 
 #Minimum value ~ 0.025
-ϵ_i = 0.05  #risk tolerance factor for generators for CC violation
+ϵ_i = 0.2  #risk tolerance factor for generators for CC violation
 z_i = ((1-ϵ_i)/ϵ_i)     #Fixed multiplier for risk tolerance
 
-ϵ_g = 0.05
+ϵ_g = 0.2
 z_g = ((1-ϵ_g)/ϵ_g)
 z_mu = z_nr = z_g
 
 #McCormick Bounds
 qMin = 0
-qMax = 2000
+qMax = 8000
 wMax = 1000
+
+
+#Parameters for jong-shi-pang-et-al: Enhancement of McCormick Relaxation
+τ = 1
+η = 1
+allow_mcTightening = 0
+
 
 function unidir_DRCC_McCormick_SOCP_EL_NG()
     m = Model(with_optimizer(Mosek.Optimizer, MSK_IPAR_LOG=1, MSK_IPAR_INTPNT_SOLVE_FORM=MSK_SOLVE_PRIMAL, MSK_DPAR_INTPNT_CO_TOL_REL_GAP=1.0e-10, MSK_IPAR_PRESOLVE_ELIMINATOR_MAX_NUM_TRIES = 0))
@@ -139,8 +147,6 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
     for pl=1:Nng_line
         if ngLine_data[pl].Γ_mu != 1
             #@constraint(m,[t=1:Nt], pr[ngLine_data[pl].ng_t,t] <= ngLine_data[pl].Γ_mu*pr[ngLine_data[pl].ng_f,t])
-            #@constraint(m, [t=1:Nt], [-(pr[ngLine_data[pl].ng_t,t] - ngLine_data[pl].Γ_mu*pr[ngLine_data[pl].ng_f,t]), sqrt(z_mu*Σ_t[t,t])*(ρ[ngLine_data[pl].ng_t,t] - ngLine_data[pl].Γ_mu*ρ[ngLine_data[pl].ng_f,t])] in SecondOrderCone())
-            #Alternate Correct Conic Reformulation
             @constraint(m, [t=1:Nt], [-(pr[ngLine_data[pl].ng_t,t] - ngLine_data[pl].Γ_mu*pr[ngLine_data[pl].ng_f,t]), sqrt(z_mu*Σ_t[t,t])*(ρ[ngLine_data[pl].ng_t,t]), sqrt(z_mu*Σ_t[t,t]*ngLine_data[pl].Γ_mu)*ρ[ngLine_data[pl].ng_f,t]] in SecondOrderCone())
         end
     end
@@ -160,26 +166,43 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
     @constraint(m, wm_soc_DA[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr[ngLine_data[pl].ng_f,t], q[pl,t], ngLine_data[pl].K_mu*pr[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
     #SOC constraint for the terms in LHS and RHS that are quadratic in uncertainty
     @constraint(m, wm_soc_RT[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*ρ[ngLine_data[pl].ng_f,t], γ[pl,t], ngLine_data[pl].K_mu*ρ[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
-    #=
+
+
     #McCormick Relaxations for the terms in LHS and RHS that are linear in uncertainty
-    @constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*(σ[ngLine_data[pl].ng_f,t] - σ[ngLine_data[pl].ng_t,t]) <= 0)
+    @constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] == 0)
+    #@constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] == 0)
     #Rectangular bounds on σ[from_ngbus,t] = pr[from_ngbus,t]* ρ[from_ngbus,t] for each pipeline pl
     @constraint(m, wp_mcm_bounds_f_LL[pl=1:Nng_line, t=1:Nt], 0*pr[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMin*ρ[ngLine_data[pl].ng_f,t] <= σ[ngLine_data[pl].ng_f,t] + 0*ngBus_data[ngLine_data[pl].ng_f].ngPreMin)
     @constraint(m, wp_mcm_bounds_f_UU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_f].ngPreMax-ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)*pr[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMax*ρ[ngLine_data[pl].ng_f,t]  <= σ[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMax*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax-ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)
     @constraint(m, wp_mcm_bounds_f_UL[pl=1:Nng_line, t=1:Nt], 0*pr[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMax*ρ[ngLine_data[pl].ng_f,t] <= σ[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMax*0)
     @constraint(m, wp_mcm_bounds_f_LU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_f].ngPreMax-ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)*pr[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMin*ρ[ngLine_data[pl].ng_f,t] <= σ[ngLine_data[pl].ng_f,t] +  ngBus_data[ngLine_data[pl].ng_f].ngPreMin * (ngBus_data[ngLine_data[pl].ng_f].ngPreMax-ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)
+
     #Rectangular bounds on σ[to_ngbus,t] = pr[to_ngbus,t]* ρ[to_ngbus,t] for each pipeline pl
     @constraint(m, wp_mcm_bounds_t_LL[pl=1:Nng_line, t=1:Nt], 0*pr[ngLine_data[pl].ng_t,t] + ngBus_data[ngLine_data[pl].ng_t].ngPreMin*ρ[ngLine_data[pl].ng_t,t] <= σ[ngLine_data[pl].ng_t,t] + 0*ngBus_data[ngLine_data[pl].ng_t].ngPreMin)
     @constraint(m, wp_mcm_bounds_t_UU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_t].ngPreMax-ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*pr[ngLine_data[pl].ng_t,t] + ngBus_data[ngLine_data[pl].ng_t].ngPreMax*ρ[ngLine_data[pl].ng_t,t]  <= σ[ngLine_data[pl].ng_t,t] + ngBus_data[ngLine_data[pl].ng_t].ngPreMax*(ngBus_data[ngLine_data[pl].ng_t].ngPreMax-ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)
     @constraint(m, wp_mcm_bounds_t_UL[pl=1:Nng_line, t=1:Nt], 0*pr[ngLine_data[pl].ng_t,t] + ngBus_data[ngLine_data[pl].ng_t].ngPreMax*ρ[ngLine_data[pl].ng_t,t] <= σ[ngLine_data[pl].ng_t,t] + ngBus_data[ngLine_data[pl].ng_t].ngPreMax*0)
     @constraint(m, wp_mcm_bounds_t_LU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_t].ngPreMax-ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*pr[ngLine_data[pl].ng_t,t] + ngBus_data[ngLine_data[pl].ng_t].ngPreMin*ρ[ngLine_data[pl].ng_t,t] <= σ[ngLine_data[pl].ng_t,t] +  ngBus_data[ngLine_data[pl].ng_t].ngPreMin * (ngBus_data[ngLine_data[pl].ng_t].ngPreMax-ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)
+
     #Rectangular bounds on λ[pl, t] = q[pl,t]*γ[pl,t]
     @constraint(m, wp_mcm_bounds_pl_LL[pl=1:Nng_line, t=1:Nt], 0*q[pl,t] + qMin*γ[pl,t] <= λ[pl,t] + qMin*0)
-    @constraint(m, wp_mcm_bounds_pl_UU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*q[pl,t] + qMax*γ[pl,t] <= λ[pl,t] + qMax*((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))
+    @constraint(m, wp_mcm_bounds_pl_UU[pl=1:Nng_line, t=1:Nt], (ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*q[pl,t] + qMax*γ[pl,t] <= λ[pl,t] + qMax*(ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))
     @constraint(m, wp_mcm_bounds_pl_UL[pl=1:Nng_line, t=1:Nt], 0*q[pl,t] + wMax*γ[pl,t] <=  λ[pl,t] + qMax*0)
-    @constraint(m, wp_mcm_bounds_pl_LU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*q[pl,t] +  qMin*γ[pl,t] <= λ[pl,t] + qMin*((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))
-    =#
-    #6b. Concave Part of Weymouth Equations - Yet to Come
+    @constraint(m, wp_mcm_bounds_pl_LU[pl=1:Nng_line, t=1:Nt], (ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*q[pl,t] +  qMin*γ[pl,t] <= λ[pl,t] + qMin*(ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))
+
+
+    #6b: Tightening of McCormick bounds for the convex direction
+    if allow_mcTightening == 1
+        @constraint(m, wp_mcm_tight_pr_from[pl=1:Nng_line, t=1:Nt],
+                        [4*σ[ngLine_data[pl].ng_f,t]*τ + ((ngBus_data[ngLine_data[pl].ng_f].ngPreMin - τ*((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)) + (ngBus_data[ngLine_data[pl].ng_f].ngPreMax - τ*0))*(pr[ngLine_data[pl].ng_f,t] - τ*ρ[ngLine_data[pl].ng_f,t]) - (ngBus_data[ngLine_data[pl].ng_f].ngPreMin - τ*((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax))*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - τ*0), (pr[ngLine_data[pl].ng_f,t] + τ*ρ[ngLine_data[pl].ng_f,t])] in SecondOrderCone())
+
+        @constraint(m, wp_mcm_tight_pr_to[pl=1:Nng_line, t=1:Nt],
+                        [4*σ[ngLine_data[pl].ng_t,t]*τ + ((ngBus_data[ngLine_data[pl].ng_t].ngPreMin - τ*((ngBus_data[ngLine_data[pl].ng_t].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)) + (ngBus_data[ngLine_data[pl].ng_t].ngPreMax - τ*0))*(pr[ngLine_data[pl].ng_t,t] - τ*ρ[ngLine_data[pl].ng_t,t]) - (ngBus_data[ngLine_data[pl].ng_t].ngPreMin - τ*((ngBus_data[ngLine_data[pl].ng_t].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))*(ngBus_data[ngLine_data[pl].ng_t].ngPreMax - τ*0), (pr[ngLine_data[pl].ng_t,t] + τ*ρ[ngLine_data[pl].ng_t,t])] in SecondOrderCone())
+
+        @constraint(m, wp_mcm_tight_flow_pl[pl=1:Nng_line, t=1:Nt],
+                        [4*λ[pl,t]*η + (qMin - η*(ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax) + (qMax -800) - η*0)*(q[pl,t] - η*γ[pl,t]) - (qMin - η*(ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))*((qMax - 800) - η*0), (q[pl,t] + η*γ[pl,t])] in SecondOrderCone())
+    end
+
+    #6c. Concave Sense of Weymouth Equations - Yet to Come
 
     #7. Linepack Definition
     @constraint(m, lp_def[pl=1:Nng_line,t=1:Nt], h[pl,t] == ngLine_data[pl].K_h*0.5*(pr[ngLine_data[pl].ng_f,t] + pr[ngLine_data[pl].ng_t,t]))
@@ -189,7 +212,6 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
         for t̂=1:Nt
             if t̂ == 1      #First Hour
                 @constraint(m, h[pl,t̂] == ngLine_data[pl].H_ini + q_in[pl,t̂] - q_out[pl,t̂])      #linepack in DA
-                @constraint(m, ngLine_data[pl].K_h*0.5*(ρ[ngLine_data[pl].ng_f,t̂] + ρ[ngLine_data[pl].ng_t,t̂]) == γ_in[pl,t̂] - γ_out[pl,t̂])  #Linepack in RT
             end
             if t̂ != 1 #All hours other than first
                 @constraint(m, h[pl,t̂] == h[pl,t̂-1] + q_in[pl,t̂] - q_out[pl,t̂])
@@ -197,8 +219,7 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
             end
             if t̂ == Nt #Final Hour
                 #@constraint(m, h[pl,t̂] >= ngLine_data[pl].H_ini)       #original
-                @constraint(m, [h[pl,t̂] - ngLine_data[pl].H_ini, -(sqrt(z_mu*Σ_t[t̂,t̂])*ngLine_data[pl].K_h*0.5)*(ρ[ngLine_data[pl].ng_f,t̂] + ρ[ngLine_data[pl].ng_t,t̂])] in SecondOrderCone())
-                #@constraint(m, [h[pl,t̂] - ngLine_data[pl].H_ini, -sqrt(z_mu*Σ_t[t̂,t̂]*ngLine_data[pl].K_h*0.5)*ρ[ngLine_data[pl].ng_f,t̂], -sqrt(z_mu*Σ_t[t̂,t̂]*ngLine_data[pl].K_h*0.5)*ρ[ngLine_data[pl].ng_f,t̂]] in SecondOrderCone())
+                @constraint(m, [h[pl,t̂] - ngLine_data[pl].H_ini, -sqrt(z_mu*Σ_t[t̂,t̂]*ngLine_data[pl].K_h*0.5)*ρ[ngLine_data[pl].ng_f,t̂], -sqrt(z_mu*Σ_t[t̂,t̂]*ngLine_data[pl].K_h*0.5)*ρ[ngLine_data[pl].ng_f,t̂]] in SecondOrderCone())
             end
         end
     end
@@ -212,16 +233,10 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
 
 
 
-    @constraint(m, λ_ng_rt[gnode=1:Nng_bus, t=1:Nt], -sum(β[k,t] for k in 1:Ng if ng_prods_data[k].ngProdBusNum==gnode)
-                                                + sum(gen_data[i].ngConvEff*α[i,t] for i in 1:Np if gen_data[i].ngBusNum==gnode)
-                                                + (sum(γ_in[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_f==gnode) - sum(γ_out[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_t==gnode))
+    @constraint(m, λ_ng_rt[gnode=1:Nng_bus, t=1:Nt], sum(β[k,t] for k in 1:Ng if ng_prods_data[k].ngProdBusNum==gnode)
+                                                - sum(gen_data[i].ngConvEff*α[i,t] for i in 1:Np if gen_data[i].ngBusNum==gnode)
+                                                - (sum(γ_in[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_f==gnode) - sum(γ_out[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_t==gnode))
                                                 == 0)
-
-    #System level response balance - alternative
-    #=
-    @constraint(m, λ_ng_rt_sys[gnode=1:Nng_bus, t=1:Nt], sum(β[k,t] for k in 1:Ng)
-                                                - sum(gen_data[i].ngConvEff*α[i,t] for i in 1:Np)
-                                                == 0) =#
 
     #println(λ_el_rt[1])
     @time optimize!(m)
@@ -232,27 +247,60 @@ function unidir_DRCC_McCormick_SOCP_EL_NG()
     #println(wm_soc[:,1])
     @info("DRCC Model M2 status ---> $(status)")
 
-    return status, JuMP.objective_value(m), round.(JuMP.value.(p), digits=2), round.(JuMP.value.(α), digits=2), round.(JuMP.dual.(λ_el_da), digits=2), round.(JuMP.value.(g),digits=2), round.(JuMP.value.(β),digits=2), round.(JuMP.value.(pr),digits=2), round.(JuMP.value.(ρ),digits=2), round.(JuMP.value.(q),digits=2), round.(JuMP.value.(γ),digits=2), round.(JuMP.dual.(λ_ng_rt),digits=2), round.(JuMP.value.(h), digits=2)
+    return status, JuMP.objective_value(m), round.(JuMP.value.(p), digits=2), round.(JuMP.value.(α), digits=2), round.(JuMP.dual.(λ_el_da), digits=2), round.(JuMP.dual.(λ_el_sys), digits=2), round.(JuMP.value.(g),digits=2), round.(JuMP.value.(β),digits=2), round.(JuMP.value.(pr),digits=2),
+    round.(JuMP.value.(ρ),digits=2), round.(JuMP.value.(q),digits=2), round.(JuMP.value.(γ),digits=2), round.(JuMP.value.(q_in),digits=2), round.(JuMP.value.(γ_in),digits=2), round.(JuMP.value.(q_out),digits=2), round.(JuMP.value.(γ_out),digits=2), round.(JuMP.dual.(λ_ng_da),digits=2), round.(JuMP.dual.(λ_ng_rt),digits=2), round.(JuMP.value.(h), digits=2)
     #return status, JuMP.objective_value(m), round.(JuMP.value.(p), digits=2), round.(JuMP.value.(α), digits=2), round.(JuMP.dual.(λ_el_da), digits=2), JuMP.value.(θ)
 
 end
 
-(status, cost, el_prod, el_alpha, el_lmp, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_lmp, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG()
+(status, cost, el_prod, el_alpha, el_lmp_da, el_lmp_rt, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_inflows, ng_gamma_in, ng_outflows, ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG()
 #(status, cost, el_prod, el_alpha, el_lmp, vangs) = unidir_DRCC_McCormick_SOCP_EL_NG()
 println("EL + NG System Cost:", cost)
 
-#calculate quality of exactness of approximation
-wm_exact=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
+#calculate quality of exactness of approximation : Uncertainty Independent (nominal)
+wm_exact_nom=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
 for hour = 1:Nt
     for pl = 1:Nng_line
         lhs_val= round(ng_flows[pl,hour]^2,digits=2)
         rhs_val = round(ngLine_data[pl].K_mu^2*(ng_pre[ngLine_data[pl].ng_f,hour]^2 - ng_pre[ngLine_data[pl].ng_t,hour]^2), digits=2)
-        push!(wm_exact, [hour, pl, lhs_val, rhs_val, abs(lhs_val - rhs_val), 100*abs(lhs_val - rhs_val)/(lhs_val)])
+        push!(wm_exact_nom, [hour, pl, lhs_val, rhs_val, abs(lhs_val - rhs_val), 100*abs(lhs_val - rhs_val)/(lhs_val)])
     end
 end
 #@show wm_exact
-println("Total Absolute Error:", sum(wm_exact[:,5]))
-println("RMS Error:", sqrt(sum(wm_exact[:,5])/(Nt+Nng_line)))
-println("NRMS Error:", sqrt(sum(wm_exact[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact[:,4]))))
+println("Total Absolute Error Nominal Flows:", sum(wm_exact_nom[:,5]))
+println("RMS Error Nominal Flows:", sqrt(sum(wm_exact_nom[:,5])/(Nt+Nng_line)))
+println("NRMS Error Nominal Flows:", sqrt(sum(wm_exact_nom[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_nom[:,4]))))
 
 println("Gas Response:", any(x->x > 0, ng_beta))
+
+println("======AFFINE RESPONSES : Quadratic Term=======")
+
+#calculate quality of exactness of approximation : Uncertainty Dependent - quadratic (response)
+wm_exact_resp_quad=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
+for hour = 1:Nt
+    for pl = 1:Nng_line
+        lhs_val= round(ng_gamma[pl,hour]^2,digits=2)
+        rhs_val = round(ngLine_data[pl].K_mu^2*(ng_rho[ngLine_data[pl].ng_f,hour]^2 - ng_rho[ngLine_data[pl].ng_t,hour]^2), digits=2)
+        push!(wm_exact_resp_quad, [hour, pl, lhs_val, rhs_val, abs(lhs_val - rhs_val), 100*abs(lhs_val - rhs_val)/(lhs_val)])
+    end
+end
+#@show wm_exact
+println("Total Absolute Error Response (Quad) Flows:", sum(wm_exact_resp_quad[:,5]))
+println("RMS Error Response (Quad) Flows:", sqrt(sum(wm_exact_resp_quad[:,5])/(Nt+Nng_line)))
+println("NRMS Error Response (Quad) Flows:", sqrt(sum(wm_exact_resp_quad[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_quad[:,4]))))
+
+println("======AFFINE RESPONSES : :Linear Term=======")
+
+#calculate quality of exactness of approximation : Uncertainty Dependent - linear (response)
+wm_exact_resp_lin=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
+for hour = 1:Nt
+    for pl = 1:Nng_line
+        lhs_val= round(ng_gamma[pl,hour]*ng_flows[pl,hour],digits=2)
+        rhs_val = round(ngLine_data[pl].K_mu^2*(ng_rho[ngLine_data[pl].ng_f,hour]*ng_pre[ngLine_data[pl].ng_f,hour] - ng_rho[ngLine_data[pl].ng_t,hour]*ng_pre[ngLine_data[pl].ng_t,hour]), digits=2)
+        push!(wm_exact_resp_lin, [hour, pl, lhs_val, rhs_val, abs(lhs_val - rhs_val), 100*abs(lhs_val - rhs_val)/(lhs_val)])
+    end
+end
+#@show wm_exact
+println("Total Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5]))
+println("RMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line)))
+println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_lin[:,4]))))

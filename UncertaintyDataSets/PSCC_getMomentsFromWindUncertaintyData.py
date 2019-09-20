@@ -23,7 +23,7 @@ FileNameBase_Scenarios = "wp-scen-zone"
 
 # !!!!! MUST BE CHANGED WITH CHANGE IN NETWORK AND SIMULATION PARAMETERS!!!!
 NumZones = 15   #Total Number of Zones for which data is available - Constant!
-NumHours = 24
+NumHours = 1
 
 #Number of WindFarms and Location
 NumWindFarms = 2
@@ -53,7 +53,7 @@ for w in range(1, NumWindFarms+1):
     WFZoneErrorsDataWithPF['Identifier'] = WFTempDataFrame
     WFZoneErrorsDataWithPF.set_index('Identifier')
     ForecastErrors = ForecastErrors.append(WFZoneErrorsDataWithPF, ignore_index=False)
-    
+    '''
     #Using first n rows for the Train dataset
     WFZoneScenarios_TrainData = WFZoneScenariosData.head(NumTrainingSamples)
     WFZoneScenarios_TrainData.columns = ['H'+str(x) for x in np.arange(1, NumHours+1)]
@@ -64,11 +64,9 @@ for w in range(1, NumWindFarms+1):
     WFZoneScenarios_TestData = WFZoneScenariosData.tail(10000-NumTrainingSamples)
     WFZoneScenarios_TestData.columns = ['H'+str(x) for x in np.arange(1, NumHours+1)]
     WFZoneScenarios_TestData_IdentifierCol = pd.DataFrame(['WFk'+str(w)+'Z'+str(i)+'Scen'+ str(x) for x in np.arange(1, 10001)])
-    print(WFZoneScenarios_TestData_IdentifierCol)
-    print(WFZoneScenarios_TestData)
     WFZoneScenarios_TestData['IdentifierCol'] = WFZoneScenarios_TestData_IdentifierCol
-    TestData = TestData.append(WFZoneScenarios_TestData, ignore_index=True) 
-#print(ForecastErrors.head())
+    TestData = TestData.append(WFZoneScenarios_TestData, ignore_index=True) '''
+print(ForecastErrors.head())
 
 
 # Step 2: Calculating the large covariance matrix of dimensions (NumHours*NummWindFarms, NumHours*NumWindFarms)
@@ -96,6 +94,7 @@ for hour_num in range(1, NumHours+1):
     SpatialTemporalCovariance = np.vstack((SpatialTemporalCovariance, RowsVal))
 print(SpatialTemporalCovariance)
 
+'''
 #Exporting to CSV through Pandas. Output Matrix Size : NumHours*NumWindFarms X NumHours*NumWindFarms
 CovarMatrix = pd.DataFrame(SpatialTemporalCovariance)
 #CovarMatrix.to_csv("2_WFs_Covariance_Matrix_Data.csv", index=False, header=None)
@@ -123,3 +122,4 @@ PointForecasts = ForecastErrors.loc[ForecastErrors['Identifier'].str.contains('P
 # ---- Exporting Test Data ------ #
 TestData.to_csv("2_WFs_500MW_TestData.csv", index = False, header=None)
 TrainData.to_csv("2_WFs_500MW_TrainData.csv", index=False, header=None)
+'''

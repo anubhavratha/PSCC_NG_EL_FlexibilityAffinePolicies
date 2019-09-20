@@ -427,12 +427,12 @@ def SOCP(data):
 	m.optimize()
 	#m.printAttr('X')
 
-	return m.status, ([np.round(v.x,2) for v in m.getVars() if "Flow over" in v.varName ]), ([np.round(v.x,2) for v in m.getVars() if "pressure" in v.varName ])
+	return m.status, ([np.round(v.x,2) for v in m.getVars() if "Flow in line" in v.varName ]), ([np.round(v.x,2) for v in m.getVars() if "pressure" in v.varName ])
 data=input()
-status,flows,pressures =SOCP(data)
+status,elflows,pressures =SOCP(data)
 print(status)
 print("====")
-print(pressures)
+print(elflows)
 print("====")
 
 

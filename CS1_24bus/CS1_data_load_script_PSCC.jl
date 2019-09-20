@@ -165,6 +165,17 @@ function load_data()
         elLine_data[add_line.ind] = add_line
     end
 
+    #Wind Generators and Multiplier parameters
+    wind_gens_data = CSV.read("CS1_24bus/data/24el_12ng/wind_gens.csv")
+    wind_data = Dict()
+    for i in 1:nrow(wind_gens_data)
+        ind = wind_gens_data[i, :WindNum]
+        Ŵ = wind_gens_data[i, :W_instcap]
+        elBusNum = wind_gens_data[i, :elBusNum]
+        add_windgen = WindGenerators(ind,elBusNum,Ŵ)
+        wind_data[add_windgen.ind] = add_windgen
+    end
+
 
     # sort dictionaries
     gen_data=SortedDict(gen_data)
@@ -234,6 +245,47 @@ function load_data()
     B̂inv = inv(B̂)
     π=build_B̆(B̂inv,refbus)
 
+
+    #Make Flow Susceptance Matrix
+    numElLines = length(line_set)
+    Bflow = zeros(numElLines,Nb)
+    for l in 1:numElLines
+        Bflow[l, elLine_data[l].b_f] = elLine_data[l].ν
+        Bflow[l, elLine_data[l].b_t] = -elLine_data[l].ν
+    end
+
+    #Forming the PTDF Matrix
+    PTDF = Bflow*π
+
+    #Extracting columns of PTDF matrix which contain generators, demands and wind sources respectively
+    numGens = nrow(all_gens_data)
+    PTDF_gens = zeros(numElLines, numGens)
+    for gen = 1:numGens
+        PTDF_gens[:,gen] = PTDF[:,gen_data[gen].elBusNum]
+    end
+    #Wind Farm buses
+    numWind = nrow(wind_gens_data)
+    PTDF_wind = zeros(numElLines, numWind)
+    for w = 1:numWind
+        PTDF_wind[:,w] = PTDF[:,wind_data[w].elBusNum]
+    end
+    #Load Buses
+    numLoad = 0
+    for elnode in collect(keys(elBus_data))
+        if(elBus_data[elnode].elLoadShare !=0)
+             numLoad = numLoad + 1
+        end
+    end
+    PTDF_load = zeros(numElLines, numLoad)
+    for elnode in 1:Nb
+        for d in 1:numLoad
+            if(elBus_data[elnode].elLoadNum == d)
+                PTDF_load[:,d] = PTDF[:, elnode]
+            end
+        end
+    end
+
+
     ng_bus_data = CSV.read("CS1_24bus/data/24el_12ng/ng_bus_data.csv")
     ng_line_data = CSV.read("CS1_24bus/data/24el_12ng/ng_line_data.csv")
     ng_producers_data = CSV.read("CS1_24bus/data/24el_12ng/ng_producers.csv")
@@ -275,26 +327,15 @@ function load_data()
     end
 
 
-    #Wind Generators and Multiplier parameters
-    wind_gens_data = CSV.read("CS1_24bus/data/24el_12ng/wind_gens.csv")
-    wind_data = Dict()
-    for i in 1:nrow(wind_gens_data)
-        ind = wind_gens_data[i, :WindNum]
-        Ŵ = wind_gens_data[i, :W_instcap]
-        elBusNum = wind_gens_data[i, :elBusNum]
-        add_windgen = WindGenerators(ind,elBusNum,Ŵ)
-        wind_data[add_windgen.ind] = add_windgen
-    end
-
     # sort dictionaries
     #ng_prods_data=SortedDict(ng_prods_data)
     ngBus_data=SortedDict(ngBus_data)
     ngLine_data=SortedDict(ngLine_data)
 #    wind_gens_data=SortedDict(wind_gens_data)
 
-
-    return elBus_data, gen_data, elLine_data, B, f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data
+    return elBus_data, gen_data, elLine_data, B, f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data, Bflow, PTDF, PTDF_gens, PTDF_wind, PTDF_load
 end
 
+
 #Uncomment to test the data generation file
-(elBus_data,gen_data,elLine_data,B,f̅,ν,π,refbus,ng_prods_data,ngBus_data,ngLine_data,wind_data) = load_data()
+(elBus_data,gen_data,elLine_data,B,f̅,ν,π,refbus,ng_prods_data,ngBus_data,ngLine_data,wind_data,Bflow,PTDF, PTDF_gens,PTDF_wind,PTDF_load) = load_data()

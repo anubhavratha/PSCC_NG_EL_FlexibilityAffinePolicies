@@ -1,3 +1,4 @@
+
 ## Test problem no-network case - OOS analysis for DRCC problems - power only##
 
 #Model M0: DRCC Affine Policies with Chebyshev Inequality
@@ -7,7 +8,7 @@ using DataFrames, Statistics
 
 # Case Study 1: 24el + 12ng Bus System : Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
-(elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data) = load_data()
+(elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data, Bflow, PTDF, PTDF_gens, PTDF_wind, PTDF_load) = load_data()
 #--Reading Uncertainty Data - Wind Farm Forecast Errors
 w_hat = CSV.read("CS1_24bus/data/UncertaintyMoments/PSCC_Point_Forecast_Values.csv", header=false)        #Point forecast
 #Σ = CSV.read("data/Covariance_Matrix_Data.csv", header=false)                                  #Large Spatial Temporal Covariance Matrix
@@ -23,7 +24,7 @@ Nt = 24    #Time periods for Simulation Horizon
 wind_buses = [5,7]
 
 #Minimum value ~ 0.025
-ϵ_i = 0.05  #risk tolerance factor for generators for CC violation
+ϵ_i = 0.1  #risk tolerance factor for generators for CC violation
 z_i = ((1-ϵ_i)/ϵ_i)     #Fixed multiplier for risk tolerance
 
 z_nr=z_i
@@ -36,8 +37,8 @@ function DRCC_EL_PolicyReserves()
     gen_data[2].c = 85
     gen_data[5].c = 22
     gen_data[6].c = 23
-    gen_data[7].c = 43
-    gen_data[10].c = 82
+    gen_data[7].c = 44
+    gen_data[10].c = 24
     gen_data[11].c = 21
 
 
@@ -63,6 +64,7 @@ function DRCC_EL_PolicyReserves()
     @constraint(m, ϕ̲_p[i=1:Np, t=1:Nt], [p[i,t] - gen_data[i].p̲, -sqrt(z_i*Σ_t[t,t])*α[i,t]] in SecondOrderCone())
 
 
+
     #3. Power flow along lines
     for t=1:Nt
         for l=1:Nel_line
@@ -76,6 +78,9 @@ function DRCC_EL_PolicyReserves()
             end
         end
     end
+
+    #EL_Power Balance
+    @constraint(m, λ_el_da[t=1:Nt], sum(p[i,t] for i in 1:Np) + sum(w_hat[i,t] for i in 1:Nw) == sum(elBus_data[elnode].elLoadShare*hourly_demand[t,2] for elnode =1:Nel_bus))
 
     #4. El nodal power balance
     @constraint(m, λ_el_da[elnode=1:Nel_bus, t=1:Nt], sum(p[i,t] for i in 1:Np if gen_data[i].elBusNum==elnode)
@@ -109,7 +114,7 @@ function DRCC_EL_PolicyReserves_CopperPlate()
     gen_data[5].c = 22
     gen_data[6].c = 23
     gen_data[7].c = 44
-    gen_data[10].c = 82
+    gen_data[10].c = 24
     gen_data[11].c = 21
 
 
@@ -146,4 +151,4 @@ function DRCC_EL_PolicyReserves_CopperPlate()
 end
 
 
-#(status, cost, pvals, alphavals, el_lmp_da, el_lmp_rt) = DRCC_EL_PolicyReserves()
+(status, cost, pvals, alphavals, el_lmp_da, el_lmp_rt) = DRCC_EL_PolicyReserves()

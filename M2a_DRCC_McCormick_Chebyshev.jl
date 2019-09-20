@@ -35,7 +35,7 @@ Nel_bus = length(elBus_data)    #number of power buses (elnode)
 Nng_line = length(ngLine_data)  #number of gas pipelines (pl)
 Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
-Nt = 24     #Time periods for Simulation Horizon
+Nt = 24    #Time periods for Simulation Horizon
 wind_buses = [5,7]
 
 #Minimum value ~ 0.025

@@ -3,7 +3,7 @@ using JuMP, Distributions, Mosek, MosekTools, LinearAlgebra, DataFrames, Ipopt, 
 
 #Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
-(elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data) = load_data()
+(elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data, Bflow, PTDF, PTDF_gens, PTDF_wind, PTDF_load) = load_data()
 
 hourly_demand = CSV.read("CS1_24bus/data/24el_12ng/hourlyDemand.csv")
 w_hat = CSV.read("CS1_24bus/data/UncertaintyMoments/PSCC_Point_Forecast_Values.csv", header=false)        #Point forecast

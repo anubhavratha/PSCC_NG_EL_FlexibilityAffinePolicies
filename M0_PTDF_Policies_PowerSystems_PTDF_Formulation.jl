@@ -110,7 +110,6 @@ function DRCC_PTDF_EL_PolicyReserves()
 #    @constraint(m,ref_el_θ[t=1:Nt], θ[refbus,t] == 0)
 
     @time optimize!(m)
-    println(m)
     status = termination_status(m)
     println(status)
     println(raw_status(m))

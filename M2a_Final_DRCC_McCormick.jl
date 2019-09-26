@@ -1,8 +1,6 @@
 #Model M2a: [Incomplete] DRCC Co-optimization with Chebyshev Inequality : Ignoring Concave part of the Weymouth equations
-# Yet to come: McCormick Relaxation for the linear terms of uncertainty
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 using DataFrames, Statistics
-
 
 # Case Study 1: 24el + 12ng Bus System : Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
@@ -36,7 +34,6 @@ Nng_line = length(ngLine_data)  #number of gas pipelines (pl)
 Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
 Nt = 24    #Time periods for Simulation Horizon
-wind_buses = [5,7]
 
 ##==== Network Data Pre-processing for PTDF Formulation =====##
 Cgens = zeros(Nel_bus,Np)       #Generator matrix
@@ -73,7 +70,7 @@ wMax = 1000
 #Parameters for jong-shi-pang-et-al: Enhancement of McCormick Relaxation
 τ = 1
 η = 1
-allow_mcTightening = 0
+allow_Trivial_McCormickTightening = 0
 
 
 function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
@@ -94,8 +91,6 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
 
     #EL Variables
     @variable(m, p[1:Np, 1:Nt])        #Production from power generators
-    @variable(m, f[1:Nel_line, 1:Nt])  #Flow in power lines
-    @variable(m, θ[1:Nel_bus, 1:Nt])   #Bus angles
 
     #NG Variables
     @variable(m, g[1:Ng, 1:Nt] >= 0)             #Gas production from gas producers
@@ -113,13 +108,9 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     @variable(m, γ_out[1:Nng_line, 1:Nt] >= 0)        #Affine change in pipeline inflow pressure
     @variable(m, ρ[1:Nng_bus, 1:Nt] >= 0)             #Affine change in nodal gas pressure
 
-    #Auxiliary Variables I: For EL Flows in real-time
-    @variable(m, κ[1:Nel_bus, 1:Nt])        #Variable for computational ease of real-time flow
-
-    #Auxiliary Variables II: For NG Weymouth Equation - McCormick bounds
+    #Auxiliary Variables I: For NG Weymouth Equation - McCormick bounds
     @variable(m, σ[1:Nng_bus, 1:Nt])    #Bilinear term of product of pr and ρ for each gas node
     @variable(m, λ[1:Nng_line, 1:Nt])   #Bilinear term of product of flow q and γ for each gas pipeline
-
 
     #OBJECTIVE function
     #Uncomment for co-optimization of el and ng
@@ -133,12 +124,12 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     for t=1:Nt
         CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
         #CovarMat = convert(Matrix, Σ[1:2,1:2])
-        agen1 = -α[:,t]*ones(1,Nw)
-        agen2 = α[:,t]*ones(1,Nw)
-        bgen = -p[:,t]
+        agen1 = α[:,t]*ones(1,Nw)
+        agen2 = -α[:,t]*ones(1,Nw)
+        bgen = p[:,t]
         for i=1:Np
-            @constraint(m, [sqrt(1/z_i)*( bgen[i] + gen_data[i].p̅); sqrt(CovarMat)*agen1[i,:]] in SecondOrderCone())
-            @constraint(m, [sqrt(1/z_i)*(-bgen[i] - gen_data[i].p̲); sqrt(CovarMat)*agen2[i,:]] in SecondOrderCone())
+            @constraint(m, [sqrt(1/z_i)*(-bgen[i] + gen_data[i].p̅); sqrt(CovarMat)*agen1[i,:]] in SecondOrderCone())
+            @constraint(m, [sqrt(1/z_i)*(bgen[i] - gen_data[i].p̲); sqrt(CovarMat)*agen2[i,:]] in SecondOrderCone())
         end
     end
 
@@ -160,27 +151,61 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     ###-----NG Constraints----###
     #1. Gas Producers Constraints
     #@constraint(m, ϕ_ng[k=1:Ng, t=1:Nt], ng_prods_data[k].G̲ <= g[k,t] <= ng_prods_data[k].G̅)     #original
-    @constraint(m, ϕ̅_ng[k=1:Ng, t=1:Nt], [ng_prods_data[k].G̅ - g[k,t], sqrt(z_g*Σ_t[t,t])*β[k,t]] in SecondOrderCone())
-    @constraint(m, ϕ̲_ng[k=1:Ng, t=1:Nt], [g[k,t] - ng_prods_data[k].G̲, -sqrt(z_g*Σ_t[t,t])*β[k,t]] in SecondOrderCone())
-
+    for t=1:Nt
+        CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
+        AngPro1 = β[:,t]*ones(1,Nw)
+        AngPro2 = - β[:,t]*ones(1,Nw)
+        BngPro = g[:,t]
+        for k=1:Ng
+            @constraint(m, [sqrt(1/z_g)*(-BngPro[k] + ng_prods_data[k].G̅); sqrt(CovarMat)*AngPro1[k,:]] in SecondOrderCone())
+            @constraint(m, [sqrt(1/z_g)*(BngPro[k] - ng_prods_data[k].G̲); sqrt(CovarMat)*AngPro2[k,:]] in SecondOrderCone())
+        end
+    end
 
     #2. Nodal Pressure Constraints
     #@constraint(m, ϕ_pr[gnode=1:Nng_bus, t=1:Nt], ngBus_data[gnode].ngPreMin <= pr[gnode,t] <= ngBus_data[gnode].ngPreMax) #original
-    @constraint(m, ϕ̅_pr[gnode=1:Nng_bus,t=1:Nt], [ngBus_data[gnode].ngPreMax - pr[gnode,t], sqrt(z_g*Σ_t[t,t])*ρ[gnode,t]] in SecondOrderCone())
-    @constraint(m, ϕ̲_pr[gnode=1:Nng_bus,t=1:Nt], [pr[gnode,t] - ngBus_data[gnode].ngPreMin, -sqrt(z_g*Σ_t[t,t])*ρ[gnode,t]] in SecondOrderCone())
+    for t=1:Nt
+        CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
+        Apre1 = ρ[:,t]*ones(1,Nw)
+        Apre2 = -ρ[:,t]*ones(1,Nw)
+        Bpre = pr[:,t]
+        for gnode=1:Nng_bus
+            @constraint(m, [sqrt(1/z_g)*(-Bpre[gnode] + ngBus_data[gnode].ngPreMax); sqrt(CovarMat)*Apre1[gnode,:]] in SecondOrderCone())
+            @constraint(m, [sqrt(1/z_g)*( Bpre[gnode] - ngBus_data[gnode].ngPreMin); sqrt(CovarMat)*Apre2[gnode,:]] in SecondOrderCone())
+        end
+    end
 
     #3. Pipelines with Compressors
     for pl=1:Nng_line
         if ngLine_data[pl].Γ_mu != 1
             #@constraint(m,[t=1:Nt], pr[ngLine_data[pl].ng_t,t] <= ngLine_data[pl].Γ_mu*pr[ngLine_data[pl].ng_f,t])
-            @constraint(m, [t=1:Nt], [-(pr[ngLine_data[pl].ng_t,t] - ngLine_data[pl].Γ_mu*pr[ngLine_data[pl].ng_f,t]), sqrt(z_mu*Σ_t[t,t])*(ρ[ngLine_data[pl].ng_t,t]), sqrt(z_mu*Σ_t[t,t]*ngLine_data[pl].Γ_mu)*ρ[ngLine_data[pl].ng_f,t]] in SecondOrderCone())
+            #@constraint(m, [t=1:Nt], [-(pr[ngLine_data[pl].ng_t,t] - ngLine_data[pl].Γ_mu*pr[ngLine_data[pl].ng_f,t]), sqrt(z_mu*Σ_t[t,t])*(ρ[ngLine_data[pl].ng_t,t]), sqrt(z_mu*Σ_t[t,t]*ngLine_data[pl].Γ_mu)*ρ[ngLine_data[pl].ng_f,t]] in SecondOrderCone())
+            for t=1:Nt
+                CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
+                f_node = ngLine_data[pl].ng_f
+                t_node = ngLine_data[pl].ng_t
+                Acomp = (ρ[t_node,t] - (ngLine_data[pl].Γ_mu)*ρ[f_node,t])
+                Bcomp = ngLine_data[pl].Γ_mu*pr[f_node,t] - pr[t_node,t]
+                @constraint(m, [sqrt(1/z_mu)*Bcomp ; sqrt(CovarMat)*[Acomp;Acomp]] in SecondOrderCone())
+            end
         end
     end
 
     #4. Uni-directionality of flows in all pipelines
-    @constraint(m, q_nonneg[pl=1:Nng_line, t=1:Nt], [q[pl,t], -(sqrt(z_g*Σ_t[t,t]))*γ[pl,t]] in SecondOrderCone())
-    @constraint(m, qin_nonneg[pl=1:Nng_line, t=1:Nt], [q_in[pl,t], -(sqrt(z_g*Σ_t[t,t]))*γ_in[pl,t]] in SecondOrderCone())
-    @constraint(m, qout_nonneg[pl=1:Nng_line, t=1:Nt], [q_out[pl,t], -(sqrt(z_g*Σ_t[t,t]))*γ_out[pl,t]] in SecondOrderCone())
+    for t=1:Nt
+        CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
+        a_flow_avg= -γ[:,t]*ones(1,Nw)
+        a_flow_in = -γ_in[:,t]*ones(1,Nw)
+        a_flow_out = -γ_out[:,t]*ones(1,Nw)
+        b_flow_avg = q[:,t]
+        b_flow_in = q_in[:,t]
+        b_flow_out = q_out[:,t]
+        for pl=1:Nng_line
+            @constraint(m, [sqrt(1/z_g)*b_flow_avg[pl]; sqrt(CovarMat)*a_flow_avg[pl,:]] in SecondOrderCone())
+            @constraint(m, [sqrt(1/z_g)*b_flow_in[pl]; sqrt(CovarMat)*a_flow_in[pl,:]] in SecondOrderCone())
+            @constraint(m, [sqrt(1/z_g)*b_flow_out[pl]; sqrt(CovarMat)*a_flow_out[pl,:]] in SecondOrderCone())
+        end
+    end
 
 
     #5. Definition of average flow in a pipeline : for DA and real-time
@@ -193,10 +218,10 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     #SOC constraint for the terms in LHS and RHS that are quadratic in uncertainty
     @constraint(m, wm_soc_RT[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*ρ[ngLine_data[pl].ng_f,t], γ[pl,t], ngLine_data[pl].K_mu*ρ[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
 
-
     #McCormick Relaxations for the terms in LHS and RHS that are linear in uncertainty
-    @constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] == 0)
+    @constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] <= 0)
     #@constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] == 0)
+
     #Rectangular bounds on σ[from_ngbus,t] = pr[from_ngbus,t]* ρ[from_ngbus,t] for each pipeline pl
     @constraint(m, wp_mcm_bounds_f_LL[pl=1:Nng_line, t=1:Nt], 0*pr[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMin*ρ[ngLine_data[pl].ng_f,t] <= σ[ngLine_data[pl].ng_f,t] + 0*ngBus_data[ngLine_data[pl].ng_f].ngPreMin)
     @constraint(m, wp_mcm_bounds_f_UU[pl=1:Nng_line, t=1:Nt], ((ngBus_data[ngLine_data[pl].ng_f].ngPreMax-ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)*pr[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMax*ρ[ngLine_data[pl].ng_f,t]  <= σ[ngLine_data[pl].ng_f,t] + ngBus_data[ngLine_data[pl].ng_f].ngPreMax*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax-ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)
@@ -215,9 +240,8 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     @constraint(m, wp_mcm_bounds_pl_UL[pl=1:Nng_line, t=1:Nt], 0*q[pl,t] + wMax*γ[pl,t] <=  λ[pl,t] + qMax*0)
     @constraint(m, wp_mcm_bounds_pl_LU[pl=1:Nng_line, t=1:Nt], (ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax)*q[pl,t] +  qMin*γ[pl,t] <= λ[pl,t] + qMin*(ngLine_data[pl].K_mu*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_t].ngPreMin)/wMax))
 
-
     #6b: Tightening of McCormick bounds for the convex direction
-    if allow_mcTightening == 1
+    if allow_Trivial_McCormickTightening == 1
         @constraint(m, wp_mcm_tight_pr_from[pl=1:Nng_line, t=1:Nt],
                         [4*σ[ngLine_data[pl].ng_f,t]*τ + ((ngBus_data[ngLine_data[pl].ng_f].ngPreMin - τ*((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax)) + (ngBus_data[ngLine_data[pl].ng_f].ngPreMax - τ*0))*(pr[ngLine_data[pl].ng_f,t] - τ*ρ[ngLine_data[pl].ng_f,t]) - (ngBus_data[ngLine_data[pl].ng_f].ngPreMin - τ*((ngBus_data[ngLine_data[pl].ng_f].ngPreMax - ngBus_data[ngLine_data[pl].ng_f].ngPreMin)/wMax))*(ngBus_data[ngLine_data[pl].ng_f].ngPreMax - τ*0), (pr[ngLine_data[pl].ng_f,t] + τ*ρ[ngLine_data[pl].ng_f,t])] in SecondOrderCone())
 
@@ -245,7 +269,11 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
             end
             if t̂ == Nt #Final Hour
                 #@constraint(m, h[pl,t̂] >= ngLine_data[pl].H_ini)       #original
-                @constraint(m, [h[pl,t̂] - ngLine_data[pl].H_ini, -sqrt(z_mu*Σ_t[t̂,t̂]*ngLine_data[pl].K_h*0.5)*ρ[ngLine_data[pl].ng_f,t̂], -sqrt(z_mu*Σ_t[t̂,t̂]*ngLine_data[pl].K_h*0.5)*ρ[ngLine_data[pl].ng_f,t̂]] in SecondOrderCone())
+                #@constraint(m, [sqrt(1/z_mu)*(h[pl,t̂] - ngLine_data[pl].H_ini), -ngLine_data[pl].K_h*0.5*sqrt(Σ_t[t̂,t̂])*ρ[ngLine_data[pl].ng_f,t̂], -ngLine_data[pl].K_h*0.5*sqrt(Σ_t[t̂,t̂])*ρ[ngLine_data[pl].ng_t,t̂]] in SecondOrderCone())
+                CovarMat = convert(Matrix, Σ[t̂*Nw-1:t̂*Nw, t̂*Nw-1:t̂*Nw])
+                alp = sqrt(0.5*ngLine_data[pl].K_h)*(ρ[ngLine_data[pl].ng_f,t̂] + ρ[ngLine_data[pl].ng_f,t̂])
+                blp = (h[pl,t̂] - ngLine_data[pl].H_ini)
+                @constraint(m, [sqrt(1/z_mu)*blp; sqrt(CovarMat)*[alp; alp]] in SecondOrderCone())
             end
         end
     end
@@ -279,11 +307,12 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
 
 end
 
-#=
 
-(status, cost, el_prod, el_alpha, el_lmp_da, el_lmp_rt, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_inflows, ng_gamma_in, ng_outflows, ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(rf)
+
+(status, cost, el_prod, el_alpha, el_lmp_da, el_lmp_rt, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_inflows, ng_gamma_in, ng_outflows, ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(0)
 #(status, cost, el_prod, el_alpha, el_lmp, vangs) = unidir_DRCC_McCormick_SOCP_EL_NG()
 println("EL + NG System Cost:", cost)
+
 
 #calculate quality of exactness of approximation : Uncertainty Independent (nominal)
 wm_exact_nom=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
@@ -332,5 +361,3 @@ end
 println("Total Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5]))
 println("RMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line)))
 println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_lin[:,4]))))
-
-=#

@@ -53,7 +53,7 @@ for d in 1:size(PTDF_load,2)
 end
 PL = zeros(Nel_line,1)      #Vector of Line Flow Limits
 for l in 1:Nel_line
-    PL[l,1] = elLine_data[l].f̅ + 50
+    PL[l,1] = elLine_data[l].f̅ +50
 end
 LoadShare = zeros(size(PTDF_load,2), 1)  #Vector of LoadShares of each load
 for d in 1:size(PTDF_load,2)
@@ -219,7 +219,7 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     @constraint(m, wm_soc_RT[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*ρ[ngLine_data[pl].ng_f,t], γ[pl,t], ngLine_data[pl].K_mu*ρ[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
 
     #McCormick Relaxations for the terms in LHS and RHS that are linear in uncertainty
-    @constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] <= 0)
+    @constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] == 0)
     #@constraint(m, wp_mcm_1[pl=1:Nng_line, t=1:Nt], λ[pl,t] - ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_f,t] + ngLine_data[pl].K_mu*σ[ngLine_data[pl].ng_t,t] == 0)
 
     #Rectangular bounds on σ[from_ngbus,t] = pr[from_ngbus,t]* ρ[from_ngbus,t] for each pipeline pl

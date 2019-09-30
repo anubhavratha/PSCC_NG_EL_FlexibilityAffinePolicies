@@ -1,3 +1,4 @@
+# Model M2a: DRCC with Chebyshev Inequality => Ex-Ante Violation Probability Calculations, Figure 2b and Figure 4 (PSCC paper)
 # Running out of Sample Simulations and gathering results
 
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools, Ipopt
@@ -40,8 +41,6 @@ Nt = 24                     #Time periods
 
 include("M2a_Final_DRCC_McCormick.jl")
 
-RiskFactor = 0.25
-(status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, m2_linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
 
 function undir_exAnte_CC_ViolationCheck(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, m2_linepack, Scenario)
     if InSample == 1
@@ -163,7 +162,10 @@ ComprViolCC = DataFrame(ScenNum=Int[], PipeLine=Int[], Hour =Int[], AnyViol = In
 InSample = 0
 ExAnteNumScenarios = 1000
 
+# Single Run for checking program correctness
 
+RiskFactor = 0.15
+(status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, m2_linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
 for Scenario = 1:ExAnteNumScenarios
     (Δ, CCViolations, GenLimsCC, LineLimsCC, GasProdLimsCC, GasNodePreLimsCC, GasLineFlowsCC, LPFinalCC) = undir_exAnte_CC_ViolationCheck(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, m2_linepack, Scenario)
 end
@@ -172,20 +174,21 @@ end
 
 
 #=
-## Subroutine to estimate overall violation probability with different values of epsilon
-OverallViolationProb = DataFrame(Epsilon=Float64[], ViolProb=Float64[])
-for RiskFactor in range(0.005, 0.25, step=0.005)
+## Subroutine to estimate overall violation probability with different values of epsilon (Figure 2b)
+#Note: Remember to clear Workspace before running this snippet!!
+OverallViolationProb = DataFrame(Epsilon=Float64[], Confidence = Float64[], ViolProb=Float64[])
+for RiskFactor in [0.05, 0.1, 0.15, 0.2, 0.25]
     #running for multiple scenarios
     (status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, m2_linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
     if status != MOI.OPTIMAL
         println("Not feasible for Epsilon =", RiskFactor)
-        push!(OverallViolationProb,[RiskFactor, Inf])
+        push!(OverallViolationProb,[RiskFactor, (1-RiskFactor), Inf])
     elseif status == MOI.OPTIMAL
         println("Now running for Epsilon=", RiskFactor)
         for Scenario = 1:ExAnteNumScenarios
             (Δ, CCViolations, GenLimsCC, LineLimsCC, GasProdLimsCC, GasNodePreLimsCC, GasLineFlowsCC, LPFinalCC) = undir_exAnte_CC_ViolationCheck(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, m2_linepack, Scenario)
         end
-        push!(OverallViolationProb, [RiskFactor, sum(CCViolations[:,2])/ExAnteNumScenarios])
+        push!(OverallViolationProb, [RiskFactor, (1-RiskFactor), sum(CCViolations[:,2])/ExAnteNumScenarios])
         deleterows!(CCViolations,1:ExAnteNumScenarios)
         deleterows!(GenLimsCC,1:ExAnteNumScenarios*Np*Nt)
         deleterows!(LineLimsCC,1:ExAnteNumScenarios*Nel_line*Nt)
@@ -195,12 +198,14 @@ for RiskFactor in range(0.005, 0.25, step=0.005)
         deleterows!(LPFinalCC,1:ExAnteNumScenarios)
     end
 end
+@show OverallViolationProb
 =#
 
 
 
 
-## Processing the DataFrame to calculate violation probabilities for each set of Chance Constraints
+## Figure 4: Processing the DataFrame to calculate violation probabilities for each set of Chance Constraints
+#Must be run separately for each epsilon value
 OverallViolationProbability = sum(CCViolations[:,2]/ExAnteNumScenarios)
 
 CountGenViol = []
@@ -280,9 +285,3 @@ end
 if(!isempty(CountComprViol))
     CompViolProb = sum(CountComprViol)/ExAnteNumScenarios
 end
-
-
-println("GenViolProb",GenViolProb)
-println("GasProdViolProb",GasProdViolProb)
-println("GasNodePreViolProb",GasNodePreViolProb)
-println("GasLineFlowViolProb",GasLineFlowViolProb)

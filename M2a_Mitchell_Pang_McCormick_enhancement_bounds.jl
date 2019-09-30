@@ -1,3 +1,4 @@
+#M2a: WORK-IN_PROGRESS (30-09-2019): Enhancement of McCormick Relaxation using the method proposed by Pang, Mitchel et al.
 #Helper function to determine the non-trivially calculated bounds for McCormick Envelope Tightening
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 using DataFrames, Statistics
@@ -87,6 +88,5 @@ function determine_upper_bounds()
     return status, JuMP.objective_value(m_ub)
 
 end
-
 
 (status, cost) = determine_upper_bounds()

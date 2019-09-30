@@ -1,4 +1,5 @@
-#Model M2a: [Incomplete] DRCC Co-optimization with Chebyshev Inequality : Ignoring Concave part of the Weymouth equations
+#Model M2a: DRCC Co-optimization with Chebyshev Inequality : (Ignoring Concave part of the Weymouth equations)
+#Implemented McCormick Tightening using Trivial bounds (explore results further ) - 30-09-2019
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 using DataFrames, Statistics
 
@@ -10,19 +11,6 @@ w_hat = CSV.read("CS1_24bus/data/UncertaintyMoments/PSCC_Point_Forecast_Values.c
 Σ = CSV.read("CS1_24bus/data/UncertaintyMoments/PSCC_Covariance_Matrix_Data.csv", header=false)                                  #Large Spatial Temporal Covariance Matrix
 Σ_t = CSV.read("CS1_24bus/data/UncertaintyMoments/PSCC_TemporallyFolded_Covariance_Matrix_Data.csv", header=false)
 hourly_demand = CSV.read("CS1_24bus/data/24el_12ng/hourlyDemand.csv")
-
-
-#=
-# Case Study 2: 188el + 48ng Bus System : Prepare and load data
-include("CS2_118bus/CS2_data_load_script_PSCC.jl")
-(elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data) = load_data()
-#--Reading Uncertainty Data - Wind Farm Forecast Errors
-w_hat = CSV.read("CS2_118bus/data/UncertaintyMoments/PSCC_Point_Forecast_Values.csv", header=false)        #Point forecast
-#Σ = CSV.read("data/Covariance_Matrix_Data.csv", header=false)                                  #Large Spatial Temporal Covariance Matrix
-Σ_t = CSV.read("CS2_118bus/data/UncertaintyMoments/PSCC_TemporallyFolded_Covariance_Matrix_Data.csv", header=false)
-hourly_demand = CSV.read("CS2_118bus/data/118el_48ng/hourlyDemand.csv")
-=#
-
 
 
 Np = length(gen_data)           #number of generators
@@ -53,7 +41,7 @@ for d in 1:size(PTDF_load,2)
 end
 PL = zeros(Nel_line,1)      #Vector of Line Flow Limits
 for l in 1:Nel_line
-    PL[l,1] = elLine_data[l].f̅ +50
+    PL[l,1] = elLine_data[l].f̅
 end
 LoadShare = zeros(size(PTDF_load,2), 1)  #Vector of LoadShares of each load
 for d in 1:size(PTDF_load,2)
@@ -101,8 +89,8 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     @variable(m, pr[1:Nng_bus, 1:Nt] >=0)       #Pressure in gas bus nodes
 
     #Affine Response Variables
-    @variable(m, α[1:Np, 1:Nt] >= 0)         #Affine response from power Generators
-    @variable(m, β[1:Ng, 1:Nt] >= 0)         #Affine response from gas producers
+    @variable(m, α[1:Np, 1:Nt] >= 0)                  #Affine response from power Generators
+    @variable(m, β[1:Ng, 1:Nt] >= 0)                  #Affine response from gas producers
     @variable(m, γ[1:Nng_line, 1:Nt] >= 0)            #Affine change in average gas flow in pipeline
     @variable(m, γ_in[1:Nng_line, 1:Nt] >= 0)         #Affine change in gas inflow in the pipleine
     @variable(m, γ_out[1:Nng_line, 1:Nt] >= 0)        #Affine change in pipeline inflow pressure
@@ -136,7 +124,6 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     #4. Power flow in the lines - PTDF formulation
     for t=1:Nt
         CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
-        #CovarMat = convert(Matrix, Σ[1:2,1:2])
         awinline = [PTDF*(-Cgens*α[:,t]*ones(1,Nw) + Cwind); -PTDF*(-Cgens*α[:,t]*ones(1,Nw) + Cwind)]
         bwinline = [PL + PTDF*(Cload*(LoadShare*hourly_demand[t,2]) - Cgens*p[:,t] - Cwind*w_hat[:,t]); PL - PTDF*(Cload*(LoadShare*hourly_demand[t,2]) - Cgens*p[:,t] - Cwind*w_hat[:,t])]
         for l = 1:Nel_line*2
@@ -308,7 +295,8 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
 end
 
 
-
+#=
+##Single Run of the function for testing and to evaluate Exactness of the SOC Relaxation
 (status, cost, el_prod, el_alpha, el_lmp_da, el_lmp_rt, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_inflows, ng_gamma_in, ng_outflows, ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(0)
 #(status, cost, el_prod, el_alpha, el_lmp, vangs) = unidir_DRCC_McCormick_SOCP_EL_NG()
 println("EL + NG System Cost:", cost)
@@ -361,3 +349,4 @@ end
 println("Total Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5]))
 println("RMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line)))
 println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_lin[:,4]))))
+=#

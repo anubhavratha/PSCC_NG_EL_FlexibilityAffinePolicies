@@ -1,4 +1,6 @@
 #Model M2b: DRCC Co-optimization with Exact SOC Reformulation (Xie and Ahmed) : Ignoring Concave part
+# WORK IN PROGRESS
+
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 
 #Prepare and load data

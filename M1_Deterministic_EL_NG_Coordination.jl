@@ -145,8 +145,6 @@ end
 #(status,cost,el_lmp, elflows, elprod, windgen, vangs) = unidir_deterministic_SOCP_EL_NG()
 #println(cost)
 
-
-
 #calculate quality of exactness of approximation
 wm_exact=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
 for hour = 1:Nt

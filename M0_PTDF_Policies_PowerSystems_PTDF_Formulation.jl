@@ -1,10 +1,8 @@
+#Model M0: DRCC Affine Policies with Chebyshev Inequality - Considering Only Power Systems Flexibility. Cost data for NGFPPs are modified inline.
+#PTDF Formulation is used for power flows modeling
 
-## Test problem no-network case - OOS analysis for DRCC problems - power only##
-
-#Model M0: DRCC Affine Policies with Chebyshev Inequality
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 using DataFrames, Statistics
-
 
 # Case Study 1: 24el + 12ng Bus System : Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
@@ -22,8 +20,7 @@ Nel_bus = length(elBus_data)    #number of power buses (elnode)
 
 Nt =24  #Time periods for Simulation Horizon
 
-#Minimum value ~ 0.025
-ϵ_i = 0.05  #risk tolerance factor for generators for CC violation
+ϵ_i = 0.05              #risk tolerance factor for generators for CC violation
 z_i = ((1-ϵ_i)/ϵ_i)     #Fixed multiplier for risk tolerance
 
 z_nr=z_i
@@ -72,7 +69,6 @@ function DRCC_PTDF_EL_PolicyReserves()
     #Affine Response Variables
     @variable(m, 1 >= α[1:Np, 1:Nt] >= 0)         #Affine response from power Generators
 
-
     #OBJECTIVE function
     @objective(m, Min, sum(sum(p[i,t]*gen_data[i].c for i=1:Np) for t=1:Nt))
 
@@ -81,7 +77,6 @@ function DRCC_PTDF_EL_PolicyReserves()
     @constraint(m, ϕ̅_p[i=1:Np, t=1:Nt], gen_data[i].p̲ <= p[i,t] <= gen_data[i].p̅)        #Deterministic
     for t=1:Nt
         CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
-        #CovarMat = convert(Matrix, Σ[1:2,1:2])
         agen1 = -α[:,t]*ones(1,Nw)
         agen2 = α[:,t]*ones(1,Nw)
         bgen = -p[:,t]
@@ -94,7 +89,6 @@ function DRCC_PTDF_EL_PolicyReserves()
     #4. Power flow in the lines - PTDF formulation
     for t=1:Nt
         CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
-        #CovarMat = convert(Matrix, Σ[1:2,1:2])
         awinline = [PTDF*(-Cgens*α[:,t]*ones(1,Nw) + Cwind); -PTDF*(-Cgens*α[:,t]*ones(1,Nw) + Cwind)]
         bwinline = [PL + PTDF*(Cload*(LoadShare*hourly_demand[t,2]) - Cgens*p[:,t] - Cwind*w_hat[:,t]); PL - PTDF*(Cload*(LoadShare*hourly_demand[t,2]) - Cgens*p[:,t] - Cwind*w_hat[:,t])]
         for l = 1:Nel_line*2
@@ -105,9 +99,6 @@ function DRCC_PTDF_EL_PolicyReserves()
     #EL_Power Balance
     @constraint(m, λ_el_da[t=1:Nt], sum(p[i,t] for i = 1:Np) + sum(w_hat[j,t] for j=1:Nw) == sum(elBus_data[elnode].elLoadShare*hourly_demand[t,2] for elnode=1:Nel_bus))
     @constraint(m, λ_el_sys[t=1:Nt], sum(α[i,t] for i=1:Np) == 1)
-
-    #5. El Reference bus
-#    @constraint(m,ref_el_θ[t=1:Nt], θ[refbus,t] == 0)
 
     @time optimize!(m)
     status = termination_status(m)

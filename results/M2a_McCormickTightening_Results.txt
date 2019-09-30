@@ -1,0 +1,52 @@
+Only McCormick:
+Mosek.MSK_SOL_STA_OPTIMAL
+[ Info: DRCC Model M2 status ---> OPTIMAL
+EL + NG System Cost:1.5884147580082323e6
+Total Absolute Error Nominal Flows:3.750199015199998e8
+RMS Error Nominal Flows:3227.571763209404
+NRMS Error Nominal Flows:1.1440508422629967
+Gas Response:true
+======AFFINE RESPONSES : Quadratic Term=======
+Total Absolute Error Response (Quad) Flows:529.5499999999998
+RMS Error Response (Quad) Flows:3.8353255692603487
+NRMS Error Response (Quad) Flows:3.1106048397926997
+======AFFINE RESPONSES : :Linear Term=======
+Total Absolute Error Response (Lin) Flows:924063.1500000001
+RMS Error Response (Lin) Flows:160.21367242945695
+NRMS Error Response (Lin) Flows:2.42728456933245
+
+
+McCormick + Tightening Trivial:
+OPTIMAL
+Mosek.MSK_SOL_STA_OPTIMAL
+[ Info: DRCC Model M2 status ---> OPTIMAL
+EL + NG System Cost:1.5884147950807123e6
+Total Absolute Error Nominal Flows:3.392351738799998e8
+RMS Error Nominal Flows:3069.7229963702653
+NRMS Error Nominal Flows:1.0937245642899194
+Gas Response:true
+======AFFINE RESPONSES : Quadratic Term=======
+Total Absolute Error Response (Quad) Flows:521.3399999999999
+RMS Error Response (Quad) Flows:3.805478506924808
+NRMS Error Response (Quad) Flows:3.0981895942321507
+======AFFINE RESPONSES : :Linear Term=======
+Total Absolute Error Response (Lin) Flows:912401.5100000002
+RMS Error Response (Lin) Flows:159.199517552312
+NRMS Error Response (Lin) Flows:2.4157660442751543
+
+Only Trivial Tightening:
+Mosek.MSK_SOL_STA_OPTIMAL
+[ Info: DRCC Model M2 status ---> OPTIMAL
+EL + NG System Cost:1.5884148870102041e6
+Total Absolute Error Nominal Flows:3.884940244099999e8
+RMS Error Nominal Flows:3285.041959862241
+NRMS Error Nominal Flows:1.1627521662684137
+Gas Response:true
+======AFFINE RESPONSES : Quadratic Term=======
+Total Absolute Error Response (Quad) Flows:518.12
+RMS Error Response (Quad) Flows:3.7937082415787096
+NRMS Error Response (Quad) Flows:3.0899578043726543
+======AFFINE RESPONSES : :Linear Term=======
+Total Absolute Error Response (Lin) Flows:908694.6300000002
+RMS Error Response (Lin) Flows:158.87579268094936
+NRMS Error Response (Lin) Flows:2.4112638333087113

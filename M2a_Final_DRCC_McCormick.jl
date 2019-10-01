@@ -111,7 +111,6 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     @constraint(m, ϕ̅_p[i=1:Np, t=1:Nt], gen_data[i].p̲ <= p[i,t] <= gen_data[i].p̅)        #Deterministic
     for t=1:Nt
         CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
-        #CovarMat = convert(Matrix, Σ[1:2,1:2])
         agen1 = α[:,t]*ones(1,Nw)
         agen2 = -α[:,t]*ones(1,Nw)
         bgen = p[:,t]
@@ -124,7 +123,7 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     #4. Power flow in the lines - PTDF formulation
     for t=1:Nt
         CovarMat = convert(Matrix, Σ[t*Nw-1:t*Nw,t*Nw-1:t*Nw])
-        awinline = [PTDF*(-Cgens*α[:,t]*ones(1,Nw) + Cwind); -PTDF*(-Cgens*α[:,t]*ones(1,Nw) + Cwind)]
+        awinline = [PTDF*(Cgens*α[:,t]*ones(1,Nw) - Cwind); -PTDF*(Cgens*α[:,t]*ones(1,Nw) - Cwind)]
         bwinline = [PL + PTDF*(Cload*(LoadShare*hourly_demand[t,2]) - Cgens*p[:,t] - Cwind*w_hat[:,t]); PL - PTDF*(Cload*(LoadShare*hourly_demand[t,2]) - Cgens*p[:,t] - Cwind*w_hat[:,t])]
         for l = 1:Nel_line*2
             @constraint(m, [sqrt(1/z_nr)*bwinline[l] ; sqrt(CovarMat)*(awinline[l,:])] in SecondOrderCone())
@@ -295,7 +294,7 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
 end
 
 
-#=
+
 ##Single Run of the function for testing and to evaluate Exactness of the SOC Relaxation
 (status, cost, el_prod, el_alpha, el_lmp_da, el_lmp_rt, ng_prod, ng_beta, ng_pre, ng_rho, ng_flows, ng_gamma, ng_inflows, ng_gamma_in, ng_outflows, ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(0)
 #(status, cost, el_prod, el_alpha, el_lmp, vangs) = unidir_DRCC_McCormick_SOCP_EL_NG()
@@ -349,4 +348,3 @@ end
 println("Total Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5]))
 println("RMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line)))
 println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_lin[:,4]))))
-=#

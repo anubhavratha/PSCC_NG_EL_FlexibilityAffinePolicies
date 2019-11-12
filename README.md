@@ -6,8 +6,9 @@ Incomplete explorations:
 1. Mitchell et al.: Tightening of McCormick envelope: M2a_Mitchell_Pang_McCormick_enhancement_bounds.jl
 2. Exact Reformulation of DRCC (following approach by Xie et. al. [3]): M2b_DRCC_ExactSOCReformulation.jl
 
-#References
-[1]Ratha, Anubhav et al. "Data-Driven Affine Policies for Flexibility Provision by Natural Gas Networks to Power Systems". Proceedings of 21st Power Systems Computation Conference. 2019.
+#References:
+
+[1] Ratha, Anubhav et al. "Data-Driven Affine Policies for Flexibility Provision by Natural Gas Networks to Power Systems". Proceedings of 21st Power Systems Computation Conference. 2019.
 
 [2]Mitchell and Pang John E. Mitchell, Jong-Shi Pang, and Bin Yu. Convex quadratic relaxations of nonconvex quadratically constrained quadraticprograms.Optimization Methods and Software, 29(1):120–136, 2014.
 

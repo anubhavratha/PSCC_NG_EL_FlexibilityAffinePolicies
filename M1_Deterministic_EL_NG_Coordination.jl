@@ -1,5 +1,5 @@
 #Model M1: Deterministic Co-optimization (Anna PowerTech Paper)
-using JuMP, Distributions, Mosek, MosekTools, LinearAlgebra, DataFrames, Ipopt, Gurobi
+using JuMP, Distributions, Mosek, MosekTools, LinearAlgebra, DataFrames, Ipopt
 
 #Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
@@ -21,7 +21,8 @@ Nt = 24       #Time periods for Simulation Horizon
 
 
 function unidir_deterministic_SOCP_EL_NG(MRRval)
-    m = Model(with_optimizer(Mosek.Optimizer, MSK_IPAR_LOG=1, MSK_IPAR_INTPNT_SOLVE_FORM=MSK_SOLVE_PRIMAL, MSK_DPAR_INTPNT_CO_TOL_REL_GAP=1.0e-10, MSK_IPAR_PRESOLVE_ELIMINATOR_MAX_NUM_TRIES = 0))
+    #m = Model(with_optimizer(Mosek.Optimizer, MSK_IPAR_LOG=1, MSK_IPAR_INTPNT_SOLVE_FORM=MSK_SOLVE_PRIMAL, MSK_DPAR_INTPNT_CO_TOL_REL_GAP=1.0e-10, MSK_IPAR_PRESOLVE_ELIMINATOR_MAX_NUM_TRIES = 0))
+    m = Model(with_optimizer(Ipopt.Optimizer, max_cpu_time=600.0))
 
     #EL Variables
     @variable(m, p[1:Np, 1:Nt])        #Production from power generators
@@ -88,7 +89,8 @@ function unidir_deterministic_SOCP_EL_NG(MRRval)
 
     #6a. Weymouth equation - convex relaxation of equality into a SOC, ignoring the concave part of the cone
     #uncomment if using MOSEK - SecondOrderCone special formulation
-    @constraint(m, wm_soc[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr[ngLine_data[pl].ng_f,t], q[pl,t], ngLine_data[pl].K_mu*pr[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
+    #@constraint(m, wm_soc[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr[ngLine_data[pl].ng_f,t], q[pl,t], ngLine_data[pl].K_mu*pr[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
+    @constraint(m, wm_soc_gurobi[pl=1:Nng_line, t=1:Nt], q[pl,t]*q[pl,t] == ngLine_data[pl].K_mu*ngLine_data[pl].K_mu*(pr[ngLine_data[pl].ng_f,t]*pr[ngLine_data[pl].ng_f,t] - pr[ngLine_data[pl].ng_t,t]*pr[ngLine_data[pl].ng_t,t]))
 
     #7. Linepack Definition
     @constraint(m, lp_def[pl=1:Nng_line,t=1:Nt], h[pl,t] == ngLine_data[pl].K_h*0.5*(pr[ngLine_data[pl].ng_f,t] + pr[ngLine_data[pl].ng_t,t]))
@@ -107,6 +109,7 @@ function unidir_deterministic_SOCP_EL_NG(MRRval)
             end
         end
     end
+
 
     #9. Nodal NG balance
     @constraint(m, λ_ng[gnode=1:Nng_bus, t=1:Nt], sum(g[k,t] for k in 1:Ng if ng_prods_data[k].ngProdBusNum==gnode)

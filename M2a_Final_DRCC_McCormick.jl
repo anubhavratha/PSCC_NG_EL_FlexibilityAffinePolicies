@@ -3,6 +3,10 @@
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 using DataFrames, Statistics
 
+#Change folder to current
+cd("/Users/anubhav/Dropbox/2_PhD_Projects_Repo/PSCC_Gas_EL_UncertaintyAware_CC/")
+
+
 # Case Study 1: 24el + 12ng Bus System : Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
 (elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data) = load_data()
@@ -89,9 +93,9 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     @variable(m, pr[1:Nng_bus, 1:Nt] >=0)       #Pressure in gas bus nodes
 
     #Affine Response Variables
-    @variable(m, α[1:Np, 1:Nt] >= 0)                  #Affine response from power Generators
-    @variable(m, β[1:Ng, 1:Nt] >= 0)                  #Affine response from gas producers
-    @variable(m, γ[1:Nng_line, 1:Nt] >= 0)            #Affine change in average gas flow in pipeline
+    @variable(m, α[1:Np, 1:Nt] >=0)                  #Affine response from power Generators
+    @variable(m, β[1:Ng, 1:Nt] >=0)                  #Affine response from gas producers
+    @variable(m, γ[1:Nng_line, 1:Nt] >=0)            #Affine change in average gas flow in pipeline
     @variable(m, γ_in[1:Nng_line, 1:Nt] >= 0)         #Affine change in gas inflow in the pipleine
     @variable(m, γ_out[1:Nng_line, 1:Nt] >= 0)        #Affine change in pipeline inflow pressure
     @variable(m, ρ[1:Nng_bus, 1:Nt] >= 0)             #Affine change in nodal gas pressure

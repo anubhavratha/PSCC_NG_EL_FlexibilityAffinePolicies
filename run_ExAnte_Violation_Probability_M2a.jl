@@ -1,8 +1,7 @@
 # Model M2a: DRCC with Chebyshev Inequality => Ex-Ante Violation Probability Calculations, Figure 2b and Figure 4 (PSCC paper)
-# Running out of Sample Simulations and gathering results
+# Running ex-ante check for violation of constraints and gathering results for plotting
 
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools, Ipopt
-
 using CSV, DataFrames
 
 #Import test data DataFrame
@@ -43,6 +42,7 @@ include("M2a_Final_DRCC_McCormick.jl")
 
 
 function undir_exAnte_CC_ViolationCheck(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, m2_linepack, Scenario)
+#Function checks the ex-ante violation probability of each of the set of constraints
     if InSample == 1
         wind_simdata = wind_traindata
     elseif InSample == 0

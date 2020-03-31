@@ -435,13 +435,13 @@ print("====")
 print(elflows)
 print("====")
 
-
+'''
 #Calculate quality of exactness of approximation
 wm_exact = pd.DataFrame(columns = ["t", "pl", "LHS", "RHS", "diff", "diffPer"])
 T = [t for t, t_info in data['Demand'].items()]
 Z = [z for z, z_info in data['Pipelines'].items()]
 MZ = [mz for mz, mz_info in data['NGPr'].items()]
-flows_changed = np.reshape(flows, (len(Z),len(T)))
+flows_changed = np.reshape(flows_changed, (len(Z),len(T)))
 pressure_changed = np.reshape(pressures,(len(MZ),len(T)))
 print(pressure_changed)
 iter=0
@@ -459,3 +459,4 @@ print(wm_exact)
 print("Total Absolute Error:{}".format(sum(wm_exact['diff'])/1e6))
 print("RMS Error: {}".format(np.sqrt(sum(wm_exact['diff'])/(len(T)+len(Z)))))
 print("NRMS Error: {}".format(np.sqrt(sum(wm_exact['diff'])/(len(T)+len(Z)))/np.mean(np.sqrt(abs(wm_exact['LHS'])))))
+'''

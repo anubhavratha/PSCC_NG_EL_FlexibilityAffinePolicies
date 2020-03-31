@@ -2,6 +2,7 @@
 #Implemented McCormick Tightening using Trivial bounds (explore results further ) - 30-09-2019
 using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
 using DataFrames, Statistics
+using Plots, StatsPlots         #Plotting Engines
 
 #Change folder to current
 cd("/Users/anubhav/Dropbox/2_PhD_Projects_Repo/PSCC_Gas_EL_UncertaintyAware_CC/")
@@ -94,11 +95,11 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
 
     #Affine Response Variables
     @variable(m, α[1:Np, 1:Nt] >=0)                  #Affine response from power Generators
-    @variable(m, β[1:Ng, 1:Nt] >=0)                  #Affine response from gas producers
-    @variable(m, γ[1:Nng_line, 1:Nt] >=0)            #Affine change in average gas flow in pipeline
-    @variable(m, γ_in[1:Nng_line, 1:Nt] >= 0)         #Affine change in gas inflow in the pipleine
-    @variable(m, γ_out[1:Nng_line, 1:Nt] >= 0)        #Affine change in pipeline inflow pressure
-    @variable(m, ρ[1:Nng_bus, 1:Nt] >= 0)             #Affine change in nodal gas pressure
+    @variable(m, β[1:Ng, 1:Nt])                  #Affine response from gas producers
+    @variable(m, γ[1:Nng_line, 1:Nt])            #Affine change in average gas flow in pipeline
+    @variable(m, γ_in[1:Nng_line, 1:Nt])         #Affine change in gas inflow in the pipleine
+    @variable(m, γ_out[1:Nng_line, 1:Nt])        #Affine change in pipeline inflow pressure
+    @variable(m, ρ[1:Nng_bus, 1:Nt])             #Affine change in nodal gas pressure
 
     #Auxiliary Variables I: For NG Weymouth Equation - McCormick bounds
     @variable(m, σ[1:Nng_bus, 1:Nt])    #Bilinear term of product of pr and ρ for each gas node
@@ -282,6 +283,10 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
                                                 - (sum(γ_in[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_f==gnode) - sum(γ_out[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_t==gnode))
                                                 == 0)
 
+
+    #Trying out fixed pressure control for some Nodes
+    #@constraint(m, ρ_fixed[gnode = 4, t=1:Nt], ρ[gnode,t] == 0)
+
     #println(λ_el_rt[1])
     @time optimize!(m)
     status = termination_status(m)
@@ -291,8 +296,8 @@ function unidir_DRCC_McCormick_SOCP_EL_NG(rf)
     #println(wm_soc[:,1])
     @info("DRCC Model M2 status ---> $(status)")
 
-    return status, JuMP.objective_value(m), round.(JuMP.value.(p), digits=2), round.(JuMP.value.(α), digits=2), round.(JuMP.dual.(λ_el_da), digits=2), round.(JuMP.dual.(λ_el_sys), digits=2), round.(JuMP.value.(g),digits=2), round.(JuMP.value.(β),digits=2), round.(JuMP.value.(pr),digits=2),
-    round.(JuMP.value.(ρ),digits=2), round.(JuMP.value.(q),digits=2), round.(JuMP.value.(γ),digits=2), round.(JuMP.value.(q_in),digits=2), round.(JuMP.value.(γ_in),digits=2), round.(JuMP.value.(q_out),digits=2), round.(JuMP.value.(γ_out),digits=2), round.(JuMP.dual.(λ_ng_da),digits=2), round.(JuMP.dual.(λ_ng_rt),digits=2), round.(JuMP.value.(h), digits=2)
+    return status, JuMP.objective_value(m), JuMP.value.(p), JuMP.value.(α), round.(JuMP.dual.(λ_el_da), digits=2), round.(JuMP.dual.(λ_el_sys), digits=2), JuMP.value.(g), JuMP.value.(β), JuMP.value.(pr),
+    JuMP.value.(ρ), JuMP.value.(q), JuMP.value.(γ), JuMP.value.(q_in), JuMP.value.(γ_in), JuMP.value.(q_out), JuMP.value.(γ_out), round.(JuMP.dual.(λ_ng_da),digits=2), round.(JuMP.dual.(λ_ng_rt),digits=2), JuMP.value.(h)
     #return status, JuMP.objective_value(m), round.(JuMP.value.(p), digits=2), round.(JuMP.value.(α), digits=2), round.(JuMP.dual.(λ_el_da), digits=2), JuMP.value.(θ)
 
 end
@@ -352,3 +357,6 @@ end
 println("Total Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5]))
 println("RMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line)))
 println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_resp_lin[:,4]))))
+
+#Plotting
+# groupedbar(el_alpha', bar_position = :stack, bar_width=0.7)

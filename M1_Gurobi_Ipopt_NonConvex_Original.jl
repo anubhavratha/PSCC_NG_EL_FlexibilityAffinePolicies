@@ -1,5 +1,5 @@
 #Model M1: Deterministic Co-optimization (Anna PowerTech Paper)
-using JuMP, Distributions, LinearAlgebra, DataFrames, Ipopt
+using JuMP, Distributions, LinearAlgebra, DataFrames, Ipopt, Gurobi
 
 #Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
@@ -110,11 +110,11 @@ function unidir_deterministic_SOCP_EL_NG()
                                                 - (sum(q_in[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_f==gnode) - sum(q_out[pl,t] for pl in 1:Nng_line if ngLine_data[pl].ng_t==gnode))
                                                 == ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
-    #println(m)
     @time optimize!(m)
     status = termination_status(m)
     println(status)
     println(raw_status(m))
+
 
     #println(wm_soc[:,1])
     @info("Deterministic Model status ---> $(status)")

@@ -310,13 +310,13 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     @info("DRCC RT EL Redispatch Model status ---> $(status)")
     #println("Inflows RT:", minimum(JuMP.value.(pr_rt)))
     #return status
-    return m2_rt, Δ, status, JuMP.objective_value(m2_rt), JuMP.value.(p_rt), JuMP.value.(l_shed), JuMP.value.(w_spill), JuMP.value.(θ_rt), JuMP.value.(g_shed), JuMP.value.(pr_rt), JuMP.value.(g_rt), JuMP.value.(q_in_rt), JuMP.value.(q_out_rt), JuMP.value.(q_rt)
+    return Δ, status, JuMP.objective_value(m2_rt), JuMP.value.(p_rt), JuMP.value.(l_shed), JuMP.value.(w_spill), JuMP.value.(θ_rt), JuMP.value.(g_shed), JuMP.value.(pr_rt), JuMP.value.(g_rt), JuMP.value.(q_in_rt), JuMP.value.(q_out_rt), JuMP.value.(q_rt)
 end
 
 #Testing the function - single run only
-#(status) = undir_DRCC_rt_operation(1, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 2)
-(model, Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_q_rt) = undir_DRCC_rt_operation(0, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 20)
+#(model, Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_q_rt) = undir_DRCC_rt_operation(0, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 20)
 
+#=
 #calculate quality of exactness of approximation :
 wm_exact_rt=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
 for hour = 1:Nt
@@ -331,7 +331,6 @@ println("Total Absolute Error RT Flows:", sum(wm_exact_rt[:,5]))
 println("RMS Error RT Flows:", sqrt(sum(wm_exact_rt[:,5])/(Nt+Nng_line)))
 println("NRMS Error RT Flows:", sqrt(sum(wm_exact_rt[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_rt[:,4]))))
 
-
 #Checking the value of Linepack
 h_rt_val = zeros(1:Nng_line,1:Nt)
 for hour=1:Nt
@@ -343,12 +342,13 @@ for hour=1:Nt
         end
     end
 end
-#=
+=#
+
 #running for multiple scenarios
 m2_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], ELLoadShed=Float64[], NGLoadShed=Float64[])
-InSample = 1
-for Scenario = 1:100
-    (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_linepack_rt) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
+InSample = 0
+for Scenario = 1:1000
+    (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_q_rt) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
     println("Actual System Deviation is: ", Δ)
     if m2_rd_status != MOI.OPTIMAL
         println("Not RT feasible for Scenario =", Scenario)
@@ -361,7 +361,7 @@ for Scenario = 1:100
     end
 end
 @show m2_scen_res
-=#
+
 
 
 

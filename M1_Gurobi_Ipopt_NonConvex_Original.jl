@@ -1,5 +1,5 @@
 #Model M1: Deterministic Co-optimization (Anna PowerTech Paper)
-using JuMP, Distributions, LinearAlgebra, DataFrames, Ipopt, Gurobi
+using JuMP, Distributions, LinearAlgebra, DataFrames, Ipopt
 
 #Prepare and load data
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
@@ -34,8 +34,8 @@ function unidir_deterministic_SOCP_EL_NG()
 
     #NG Variables
     @variable(m, g[1:Ng, 1:Nt] >=0)             #Gas production from gas producers
-    @variable(m, q_in[1:Nng_line, 1:Nt])    #Gas inflow in the PipeLine
-    @variable(m, q_out[1:Nng_line, 1:Nt])   #Gas outflow in the PipeLine
+    @variable(m, q_in[1:Nng_line, 1:Nt] >=0)    #Gas inflow in the PipeLine
+    @variable(m, q_out[1:Nng_line, 1:Nt] >=0)   #Gas outflow in the PipeLine
     @variable(m, q[1:Nng_line, 1:Nt] >= 0)       #Avg. Gas inflow in the PipeLine
     @variable(m, h[1:Nng_line, 1:Nt] >= 0 )       #Line pack amount
     @variable(m, pr[1:Nng_bus, 1:Nt] >= 0)       #Pressure in gas bus nodes

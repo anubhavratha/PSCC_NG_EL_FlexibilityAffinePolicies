@@ -26,7 +26,7 @@ Nt = 24       #Time periods for Simulation Horizon
 
 function unidir_deterministic_SOCP_EL_NG(MRRval)
     m = Model(with_optimizer(Mosek.Optimizer, MSK_IPAR_LOG=1, MSK_IPAR_INTPNT_SOLVE_FORM=MSK_SOLVE_PRIMAL, MSK_DPAR_INTPNT_CO_TOL_REL_GAP=1.0e-10, MSK_IPAR_PRESOLVE_ELIMINATOR_MAX_NUM_TRIES = 0))
-    
+
     #EL Variables
     @variable(m, p[1:Np, 1:Nt])        #Production from power generators
     @variable(m, r_up[1:Np, 1:Nt])     #Upwards reserve procured
@@ -150,16 +150,19 @@ end
 #(status,cost,el_lmp, elflows, elprod, windgen, vangs) = unidir_deterministic_SOCP_EL_NG()
 #println(cost)
 
-#calculate quality of exactness of approximation
-wm_exact=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
+#calculate quality of exactness of approximation : Uncertainty Independent (nominal)
+wm_exact_nom=DataFrame(t=Int[],pl=Int[], LHS=Float64[], RHS=Float64[], AbsoluteError=Float64[], NormalizedError=Float64[])
+wm_exact_nom_export = DataFrame(t=Int[], pl=Int[], NormalizedError = Float64[])
 for hour = 1:Nt
     for pl = 1:Nng_line
-        lhs_val= round(ng_flows[pl,hour]^2,digits=2)
-        rhs_val = round(ngLine_data[pl].K_mu^2*(ng_pre[ngLine_data[pl].ng_f,hour]^2 - ng_pre[ngLine_data[pl].ng_t,hour]^2), digits=2)
-        push!(wm_exact, [hour, pl, lhs_val, rhs_val, abs(lhs_val - rhs_val), 100*abs(lhs_val - rhs_val)/(lhs_val)])
+        lhs_val= ng_flows[pl,hour]^2
+        rhs_val = ngLine_data[pl].K_mu^2*(ng_pre[ngLine_data[pl].ng_f,hour]^2 - ng_pre[ngLine_data[pl].ng_t,hour]^2)
+        push!(wm_exact_nom, [hour, pl, lhs_val, rhs_val, (rhs_val - lhs_val), (rhs_val - lhs_val)/(rhs_val)])
+        push!(wm_exact_nom_export, [hour, pl, round((rhs_val - lhs_val)/(rhs_val), digits=4)])
     end
 end
-@show wm_exact
-println("Total Absolute Error:" , sum(wm_exact[:,5]))
-println("RMS Error:", sqrt(sum(wm_exact[:,5])/(Nt+Nng_line)))
-println("NRMS Error:", sqrt(sum(wm_exact[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact[:,4]))))
+#@show wm_exact
+println("Mean Absolute Error Nominal Flows:", sum(wm_exact_nom[:,5])/(Nt+Nng_line))
+println("NRMS Error Nominal Flows:", sqrt(sum((wm_exact_nom[:,5]/mean(wm_exact_nom[:,3])).^2)/(Nt+Nng_line)))
+
+plot(reshape(round.(wm_exact_nom[:,6],digits=2),(12,24)), st=:heatmap, color=cgrad([:white, :yellow, :orange, :red]), colorbar_title="Normalized Error - Nom")

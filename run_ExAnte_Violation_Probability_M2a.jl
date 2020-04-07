@@ -163,7 +163,7 @@ InSample = 0
 ExAnteNumScenarios = 1000
 
 # Single Run for checking program correctness
-
+#=
 RiskFactor = 0.15
 (status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, m2_linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
 for Scenario = 1:ExAnteNumScenarios
@@ -171,9 +171,9 @@ for Scenario = 1:ExAnteNumScenarios
 end
 @show CCViolations
 #@show LineLimsCC
+=#
 
 
-#=
 ## Subroutine to estimate overall violation probability with different values of epsilon (Figure 2b)
 #Note: Remember to clear Workspace before running this snippet!!
 OverallViolationProb = DataFrame(Epsilon=Float64[], Confidence = Float64[], ViolProb=Float64[])
@@ -199,11 +199,10 @@ for RiskFactor in [0.05, 0.1, 0.15, 0.2, 0.25]
     end
 end
 @show OverallViolationProb
-=#
 
 
 
-
+#=
 ## Figure 4: Processing the DataFrame to calculate violation probabilities for each set of Chance Constraints
 #Must be run separately for each epsilon value
 OverallViolationProbability = sum(CCViolations[:,2]/ExAnteNumScenarios)
@@ -285,3 +284,4 @@ end
 if(!isempty(CountComprViol))
     CompViolProb = sum(CountComprViol)/ExAnteNumScenarios
 end
+=#

@@ -254,7 +254,7 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     @constraint(m2_rt, ϕ_ng_lshed[gnode=1:Nng_bus, t=1:Nt], 0 <= g_shed[gnode,t] <= ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
     #2. Nodal Pressure Constraints
-    #@constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
+    @constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
 
     #3. Pipelines with Compressors
     for pl=1:Nng_line
@@ -273,7 +273,7 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     #6a. Weymouth equation - convex relaxation of equality into a SOC, ignoring the concave part of the cone
     #uncomment if using MOSEK - SecondOrderCone special formulation
     #@constraint(m2_rt, wm_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t]^2 ==  (ngLine_data[pl].K_mu)^2*(pr_rt[ngLine_data[pl].ng_f,t]^2  - pr_rt[ngLine_data[pl].ng_t,t]^2))
-    #@constraint(m2_rt, wm_rt_eq[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
+    @constraint(m2_rt, wm_rt_eq[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
 
     #7. Linepack Definition
     @constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]))
@@ -347,7 +347,7 @@ end
 #running for multiple scenarios
 m2_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], ELLoadShed=Float64[], NGLoadShed=Float64[])
 InSample = 0
-for Scenario = 1:1000
+for Scenario = 1:10
     (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_q_rt) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
     println("Actual System Deviation is: ", Δ)
     if m2_rd_status != MOI.OPTIMAL

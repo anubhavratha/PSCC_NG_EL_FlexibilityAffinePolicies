@@ -42,7 +42,7 @@ Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
 Nt = 24    #Time periods for Simulation Horizon
 
-
+#=
 ## DRCC Model Figure 2: Risk factor vs. DA Cost
 m2_riskfactor = DataFrame(Epsilon=Float64[], Confidence=Float64[], Feasibility=Int[], DAExpCost=Float64[], NomGap=Float64[], QuadGap=Float64[], LinGap=Float64[])
 for RiskFactor in range(0.04, 0.25, step=0.01)
@@ -57,7 +57,7 @@ for RiskFactor in range(0.04, 0.25, step=0.01)
 end
 @show m2_riskfactor
 
-#=
+
 # Fig.3 : Gather results for the optimal policies allocations plot
 RiskFactor = 0.05
 (m2_da_status, m2_da_cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
@@ -79,3 +79,31 @@ for t=1:Nt
     push!(total_linepack, round(sum(linepack[:,t]), digits=2))
 end
 =#
+
+
+#Fig. New: Gather Data for new figure
+RiskFactor = 0.05
+(m2_da_status, m2_da_cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
+
+p_sched_GF = []
+p_sched_nonGF = []
+alpha_GF = []
+alpha_nonGF = []
+
+for t=1:Nt
+    push!(p_sched_GF, sum(m2_el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
+    push!(p_sched_nonGF, sum(m2_el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
+    push!(alpha_GF, sum(m2_el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
+    push!(alpha_nonGF, sum(m2_el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
+end
+wind_forvals = dropdims(Array(sum(convert(Matrix,w_hat),dims=1)'),dims=2)
+el_loadvals = hourly_demand.elTotDem
+
+nominal_el = DataFrame(hour=1:24,windMW=wind_forvals,nonGFMW=p_sched_nonGF,GFMW=p_sched_GF,demMW=el_loadvals)
+CSV.write("Nominal_Schedule.csv", nominal_el)
+
+alpha_el = DataFrame(hour=1:24,nonGF_alpha = alpha_nonGF, GF_alpha= alpha_GF)
+CSV.write("Alpha_Vals.csv", alpha_el)
+
+nominal_ng_prod = DataFrame(hour=1:24,prod1=round.(m2_ng_prod[1,:], digits=4),prod2=round.(m2_ng_prod[2,:], digits=4),prod3=round.(m2_ng_prod[3,:], digits=4))
+CSV.write("NG_ProdVals.csv", nominal_ng_prod)

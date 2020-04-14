@@ -254,18 +254,18 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     @constraint(m2_rt, ϕ_ng_lshed[gnode=1:Nng_bus, t=1:Nt], 0 <= g_shed[gnode,t] <= ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
     #2. Nodal Pressure Constraints
-    @constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
+    #@constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
 
     #3. Pipelines with Compressors
-    for pl=1:Nng_line
-        if ngLine_data[pl].Γ_mu != 1
-            @constraint(m2_rt,[t=1:Nt], pr_rt[ngLine_data[pl].ng_t,t] <= ngLine_data[pl].Γ_mu*pr_rt[ngLine_data[pl].ng_f,t])
-        end
-    end
+    #for pl=1:Nng_line
+    #    if ngLine_data[pl].Γ_mu != 1
+    #        @constraint(m2_rt,[t=1:Nt], pr_rt[ngLine_data[pl].ng_t,t] <= ngLine_data[pl].Γ_mu*pr_rt[ngLine_data[pl].ng_f,t])
+    #    end
+    #end
 
     #5. Definition of average flow in a pipeline
-    @constraint(m2_rt, q_value_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == m2_ng_flows[pl,t] + Δ[t]*m2_ng_gamma[pl,t])
-    @constraint(m2_rt, q_value_rt_try[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == 0.5*(q_in_rt[pl,t] + q_out_rt[pl,t]))
+    #@constraint(m2_rt, q_value_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == m2_ng_flows[pl,t] + Δ[t]*m2_ng_gamma[pl,t])
+    #@constraint(m2_rt, q_value_rt_try[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == 0.5*(q_in_rt[pl,t] + q_out_rt[pl,t]))
 
     #@constraint(m2_rt, q_in_value_rt[pl=1:Nng_line, t=1:Nt], q_in_rt[pl,t] == m2_ng_inflows[pl,t] + Δ[t]*m2_ng_gamma_in[pl,t])
     #@constraint(m2_rt, q_out_value_rt[pl=1:Nng_line, t=1:Nt], q_out_rt[pl,t] == m2_ng_outflows[pl,t] + Δ[t]*m2_ng_gamma_out[pl,t])
@@ -273,10 +273,10 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     #6a. Weymouth equation - convex relaxation of equality into a SOC, ignoring the concave part of the cone
     #uncomment if using MOSEK - SecondOrderCone special formulation
     #@constraint(m2_rt, wm_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t]^2 ==  (ngLine_data[pl].K_mu)^2*(pr_rt[ngLine_data[pl].ng_f,t]^2  - pr_rt[ngLine_data[pl].ng_t,t]^2))
-    @constraint(m2_rt, wm_rt_eq[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
+    #@constraint(m2_rt, wm_rt_eq[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
 
     #7. Linepack Definition
-    @constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]))
+    #@constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]))
 
     #8. Linepack Operation Dynamics Constraints: for t=1, for t>1 and for t=T
     for pl=1:Nng_line

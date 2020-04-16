@@ -336,7 +336,6 @@ function calculate_exactness(ng_pre,ng_flows,ng_rho,ng_gamma)
             push!(wm_exact_nom_export, [hour, pl, round((rhs_val - lhs_val)/(rhs_val), digits=4)])
         end
     end
-    #@show wm_exact
     #Replace any NaNs due to normalization
     replace_nan(v) = map(x -> isnan(x) ? zero(x) : x, v)
     wm_exact_exact_nom = DataFrame(map(replace_nan, eachrow(wm_exact_nom)))
@@ -347,9 +346,9 @@ function calculate_exactness(ng_pre,ng_flows,ng_rho,ng_gamma)
     push!(NRMS_relaxation_gap, sqrt(sum((wm_exact_nom[:,5]/mean(wm_exact_nom[:,3])).^2)/(Nt+Nng_line)))
 
     p1=plot(reshape(round.(wm_exact_nom[:,6],digits=2),(12,24)), st=:heatmap, color=cgrad([:white, :yellow, :orange, :red]), colorbar_title="Normalized Error - Nom")
+    CSV.write("results/Fig5a_Weymouth_Exactness_Nominal.csv", wm_exact_nom_export)
 
     println("======AFFINE RESPONSES : Quadratic Term=======")
-
     #calculate quality of exactness of approximation : Uncertainty Dependent - quadratic (response)
     wm_exact_resp_quad=DataFrame(t=Int[],pl=Int[], LHS=Float64[], RHS=Float64[], AbsoluteError=Float64[], NormalizedError=Float64[])
     wm_exact_resp_quad_export = DataFrame(t=Int[], pl=Int[], NormalizedError = Float64[])
@@ -365,14 +364,13 @@ function calculate_exactness(ng_pre,ng_flows,ng_rho,ng_gamma)
     replace_nan(v) = map(x -> isnan(x) ? zero(x) : x, v)
     wm_exact_resp_quad = DataFrame(map(replace_nan, eachrow(wm_exact_resp_quad)))
     wm_exact_resp_quad_export = DataFrame(map(replace_nan, eachrow(wm_exact_resp_quad_export)))
-    #@show wm_exact
     println("Mean Absolute Error Response (Quad) Flows:", sum(wm_exact_resp_quad[:,5])/(Nt+Nng_line))
     println("NRMS Error Response (Quad) Flows:", sqrt(sum(wm_exact_resp_quad[:,6].^2)/(Nt+Nng_line)))
     push!(NRMS_relaxation_gap,  sqrt(sum(wm_exact_resp_quad[:,6].^2)/(Nt+Nng_line)))
     p2=plot(reshape(round.(wm_exact_resp_quad[:,6],digits=2),(12,24)), st=:heatmap, color=:heat, colorbar_title="Normalized Error - Quad")
+    CSV.write("results/Fig5b_Weymouth_Exactness_Quad.csv", wm_exact_resp_quad_export)
 
-
-    println("======AFFINE RESPONSES : :Linear Term=======")
+    println("======AFFINE RESPONSES : Bilinear Terms=======")
 
     #calculate quality of exactness of approximation : Uncertainty Dependent - linear (response)
     wm_exact_resp_lin=DataFrame(t=Int[],pl=Int[], LHS=Float64[], RHS=Float64[], AbsoluteError=Float64[], NormalizedError=Float64[])
@@ -389,48 +387,11 @@ function calculate_exactness(ng_pre,ng_flows,ng_rho,ng_gamma)
     replace_nan(v) = map(x -> isnan(x) ? zero(x) : x, v)
     wm_exact_resp_lin = DataFrame(map(replace_nan, eachrow(wm_exact_resp_lin)))
     wm_exact_resp_lin_export = DataFrame(map(replace_nan, eachrow(wm_exact_resp_lin_export)))
-    #@show wm_exact
     println("Mean Absolute Error Response (Lin) Flows:", sum(wm_exact_resp_lin[:,5])/(Nt+Nng_line))
     println("NRMS Error Response (Lin) Flows:", sqrt(sum(wm_exact_resp_lin[:,6].^2)/(Nt+Nng_line)))
     push!(NRMS_relaxation_gap, sqrt(sum(wm_exact_resp_lin[:,6].^2)/(Nt+Nng_line)))
     p3=plot(reshape(round.(wm_exact_resp_lin[:,6],digits=2),(12,24)), st=:heatmap, color=cgrad([:white, :yellow, :orange, :red]), colorbar_title="Normalized Error - Lin")
+    CSV.write("results/Fig5c_Weymouth_Exactness_Bilinear.csv", wm_exact_resp_lin_export)
 
     return NRMS_relaxation_gap
 end
-#=
-#% To view Plot in Julia
-lay = @layout [a ; b ; c]
-plot(p1,p2,p3, layout=lay)
-# To export data to csv files
-CSV.write("Nomval_WM.csv", wm_exact_nom_export)
-CSV.write("Quadval_WM.csv", wm_exact_resp_quad_export)
-CSV.write("Linval_WM.csv", wm_exact_resp_lin_export)
-=#
-
-
-
-
-
-#=
-#Table and Plots to Analyze Results
-#groupedbar(el_alpha', bar_position = :stack, bar_width=0.7)
-
-#Fig 1: Wind Forecast Values
-groupedbar(convert(Matrix,w_hat)', bar_position = :stack, bar_width = 0.7)
-totalWindForecast = sum(convert(Matrix,w_hat),dims=1)
-
-#Fig 2:Power Dispatch and Alpha
-p_nonGF = []
-α_nonGF = []
-p_GF = []
-α_GF = []
-for t=1:Nt
-    push!(α_nonGF, sum(el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
-    push!(p_nonGF, sum(el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
-    push!(α_GF, sum(el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
-    push!(p_GF, sum(el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
-end
-#areaplot(p_GF + p_nonGF + totalWindForecast', color =:gray)
-#areaplot!(p_GF + p_nonGF, color =:blue)
-#areaplot!(p_GF, color =:red)
-=#

@@ -162,20 +162,9 @@ ComprViolCC = DataFrame(ScenNum=Int[], PipeLine=Int[], Hour =Int[], AnyViol = In
 InSample = 0
 ExAnteNumScenarios = 1000
 
-# Single Run for checking program correctness
-
-RiskFactor = 0.1
-(status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, m2_linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
-for Scenario = 1:ExAnteNumScenarios
-    (Δ, CCViolations, GenLimsCC, LineLimsCC, GasProdLimsCC, GasNodePreLimsCC, GasLineFlowsCC, LPFinalCC) = undir_exAnte_CC_ViolationCheck(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, m2_linepack, Scenario)
-end
-@show CCViolations
-#@show LineLimsCC
-
-
-#=
-## Subroutine to estimate overall violation probability with different values of epsilon (Figure 2b)
+## -------------Fig 3(b): Overall ex-ante Violation Probability for different values of epsilon
 #Note: Remember to clear Workspace before running this snippet!!
+#=
 OverallViolationProb = DataFrame(Epsilon=Float64[], Confidence = Float64[], ViolProb=Float64[])
 for RiskFactor in [0.05, 0.1, 0.15, 0.2, 0.25]
     #running for multiple scenarios
@@ -200,13 +189,18 @@ for RiskFactor in [0.05, 0.1, 0.15, 0.2, 0.25]
 end
 @show OverallViolationProb
 =#
-
-
-
-## Figure 4: Processing the DataFrame to calculate violation probabilities for each set of Chance Constraints
+##-------------- Fig 4: Processing the DataFrame to calculate violation probabilities for each set of Chance Constraints
 #Must be run separately for each epsilon value
+#=
+RiskFactor = 0.05
+(status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, m2_linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
+for Scenario = 1:ExAnteNumScenarios
+    (Δ, CCViolations, GenLimsCC, LineLimsCC, GasProdLimsCC, GasNodePreLimsCC, GasLineFlowsCC, LPFinalCC) = undir_exAnte_CC_ViolationCheck(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, m2_linepack, Scenario)
+end
+#@show CCViolations
 OverallViolationProbability = sum(CCViolations[:,2]/ExAnteNumScenarios)
 
+#  I. Generation Limit Violations
 CountGenViol = []
 for s = 1:ExAnteNumScenarios
     ThisScenData = GenLimsCC[(GenLimsCC.ScenNum.==s), 4]
@@ -214,9 +208,12 @@ for s = 1:ExAnteNumScenarios
         push!(CountGenViol, 1)
     end
 end
-GenViolProb = sum(CountGenViol)/ExAnteNumScenarios
-
-
+if(!isempty(CountGenViol))
+    GenViolProb = sum(CountGenViol)/ExAnteNumScenarios
+else
+    GenViolProb = 0
+end
+# II. EL Line Flows Limit Violations
 CountLineFlowViol = []
 for s=1:ExAnteNumScenarios
     ThisScenData = LineLimsCC[(LineLimsCC.ScenNum).==s, 4]
@@ -226,42 +223,11 @@ for s=1:ExAnteNumScenarios
 end
 if(!isempty(CountLineFlowViol))
     LineFlowViolProb = sum(CountLineFlowViol)/ExAnteNumScenarios
+else
+    LineFlowViolProb = 0
 end
 
-
-CountGasProdViol = []
-for s=1:ExAnteNumScenarios
-    ThisScenData = GasProdLimsCC[(GasProdLimsCC.ScenNum.==s),2]
-    if(any(x->x>0, ThisScenData))
-        push!(CountGasProdViol, 1)
-    end
-end
-if(!isempty(CountGasProdViol))
-    GasProdViolProb = sum(CountGasProdViol)/ExAnteNumScenarios
-end
-
-CountGasPreNodeViol = []
-for s=1:ExAnteNumScenarios
-    ThisScenData = GasNodePreLimsCC[(GasNodePreLimsCC.ScenNum.==s),4]
-    if(any(x->x>0, ThisScenData))
-        push!(CountGasPreNodeViol, 1)
-    end
-end
-if(!isempty(CountGasPreNodeViol))
-    GasNodePreViolProb = sum(CountGasPreNodeViol)/ExAnteNumScenarios
-end
-
-CountGasFlowViol = []
-for s=1:ExAnteNumScenarios
-    ThisScenData = GasLineFlowsCC[(GasLineFlowsCC.ScenNum.==s),4]
-    if(any(x->x>0, ThisScenData))
-        push!(CountGasFlowViol, 1)
-    end
-end
-if(!isempty(CountGasFlowViol))
-    GasLineFlowViolProb = sum(CountGasFlowViol)/ExAnteNumScenarios
-end
-
+#III. Linepack Final Value Violation
 CountLPFinalViol =[]
 for s=1:ExAnteNumScenarios
     ThisScenData = LPFinalCC[(LPFinalCC.ScenNum.==s),3]
@@ -271,9 +237,53 @@ for s=1:ExAnteNumScenarios
 end
 if(!isempty(CountLPFinalViol))
     LPFinalViolProb = sum(CountLPFinalViol)/ExAnteNumScenarios
+else
+    LPFinalViolProb = 0
 end
 
+#IV. Gas Flow Direaction Violation
+CountGasFlowViol = []
+for s=1:ExAnteNumScenarios
+    ThisScenData = GasLineFlowsCC[(GasLineFlowsCC.ScenNum.==s),4]
+    if(any(x->x>0, ThisScenData))
+        push!(CountGasFlowViol, 1)
+    end
+end
+if(!isempty(CountGasFlowViol))
+    GasLineFlowViolProb = sum(CountGasFlowViol)/ExAnteNumScenarios
+else
+    GasLineFlowViolProb = 0
+end
 
+#V. Nodal Gas Pressure Limits Violation
+CountGasPreNodeViol = []
+for s=1:ExAnteNumScenarios
+    ThisScenData = GasNodePreLimsCC[(GasNodePreLimsCC.ScenNum.==s),4]
+    if(any(x->x>0, ThisScenData))
+        push!(CountGasPreNodeViol, 1)
+    end
+end
+if(!isempty(CountGasPreNodeViol))
+    GasNodePreViolProb = sum(CountGasPreNodeViol)/ExAnteNumScenarios
+else
+    GasNodePreViolProb = 0
+end
+
+#VI. Gas Producers/Suppliers Limit Violation
+CountGasProdViol = []
+for s=1:ExAnteNumScenarios
+    ThisScenData = GasProdLimsCC[(GasProdLimsCC.ScenNum.==s),2]
+    if(any(x->x>0, ThisScenData))
+        push!(CountGasProdViol, 1)
+    end
+end
+if(!isempty(CountGasProdViol))
+    GasProdViolProb = sum(CountGasProdViol)/ExAnteNumScenarios
+else
+    GasProdViolProb = 0
+end
+
+#Extra: Compressors Limit Violation
 CountComprViol = []
 for s=1:ExAnteNumScenarios
     ThisScenData = ComprViolCC[(ComprViolCC.ScenNum.==s), 4]
@@ -283,4 +293,12 @@ for s=1:ExAnteNumScenarios
 end
 if(!isempty(CountComprViol))
     CompViolProb = sum(CountComprViol)/ExAnteNumScenarios
+else
+    CompViolProb = 0
 end
+
+# To Display results
+ConstraintSetViolationProb = DataFrame(RiskFactorVal=Float64[],I_genLims=Float64[],II_lineLims=Float64[],III_linepackNonDepletion=Float64[], IV_ngFlowDir=Float64[], V_ngPressureBounds=Float64[], VI_ngSupplierBounds=Float64[])
+push!(ConstraintSetViolationProb,[RiskFactor, GenViolProb, LineFlowViolProb, LPFinalViolProb, GasLineFlowViolProb, GasNodePreViolProb, GasProdViolProb])
+@show ConstraintSetViolationProb
+=#

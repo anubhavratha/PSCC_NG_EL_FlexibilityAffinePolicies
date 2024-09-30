@@ -159,7 +159,7 @@ function load_data()
         ind = el_line_data[i, :LineNum]
         b_f = el_line_data[i, :From]
         b_t = el_line_data[i, :To]
-        ν = 250/el_line_data[i, :adm]
+        ν = 1/el_line_data[i, :adm]
         f̅ = el_line_data[i, :f_max]
         add_line = elLine(ind,b_f,b_t,ν,f̅)
         elLine_data[add_line.ind] = add_line

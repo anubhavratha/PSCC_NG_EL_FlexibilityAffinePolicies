@@ -1,5 +1,5 @@
 #Getting results for plotting
-using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
+using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools, Ipopt
 
 using CSV, DataFrames
 
@@ -7,7 +7,7 @@ using CSV, DataFrames
 include("CS1_24bus/CS1_data_load_script_PSCC.jl")
 (elBus_data, gen_data, elLine_data ,B , f̅, ν, π, refbus, ng_prods_data, ngBus_data, ngLine_data, wind_data) = load_data()
 
-include("M2a_Final_DRCC_McCormick.jl")
+include("main.jl")
 
 
 #Import test data DataFrame (Out-of-Sample)
@@ -42,51 +42,38 @@ Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
 Nt = 24    #Time periods for Simulation Horizon
 
-## -------------Fig.2-all subplots : Gather results for nominal schedules and optimal policies allocations plot
 #=
-RiskFactor = 0.05
-(m2_da_status, m2_da_cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
-
-p_sched_GF = []
-p_sched_nonGF = []
-alpha_GF = []
-alpha_nonGF = []
-
-for t=1:Nt
-    push!(p_sched_GF, sum(m2_el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
-    push!(p_sched_nonGF, sum(m2_el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
-    push!(alpha_GF, sum(m2_el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
-    push!(alpha_nonGF, sum(m2_el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
-end
-wind_forvals = dropdims(Array(sum(convert(Matrix,w_hat),dims=1)'),dims=2)
-el_loadvals = hourly_demand.elTotDem
-nominal_el = DataFrame(hour=1:24,windMW=wind_forvals,nonGFMW=p_sched_nonGF,GFMW=p_sched_GF,demMW=el_loadvals)
-alpha_el = DataFrame(hour=1:24,nonGF_alpha = alpha_nonGF, GF_alpha= alpha_GF)
-nominal_ng_prod = DataFrame(hour=1:24,prod1=round.(m2_ng_prod[1,:], digits=4),prod2=round.(m2_ng_prod[2,:], digits=4),prod3=round.(m2_ng_prod[3,:], digits=4))
-beta_ng = DataFrame(hour=1:24,prod1=round.(m2_ng_beta[1,:], digits=4),prod2=round.(m2_ng_beta[2,:], digits=4),prod3=round.(m2_ng_beta[3,:], digits=4))
-
-#Optionally, write them to csv files for output
-CSV.write("results/Fig2a_Nominal_Schedule.csv", nominal_el)
-CSV.write("results/Fig2b_Alpha_Vals.csv", alpha_el)
-CSV.write("results/Fig2c_NG_ProdVals.csv", nominal_ng_prod)
-CSV.write("results/Fig2d_NG_BetaVals.csv", nominal_ng_prod)
-=#
-
-
-## ------------- Figure 3(a): Risk factor vs. DA Cost
-#=
-m2_riskfactor = DataFrame(Epsilon=Float64[], Confidence=Float64[], Feasibility=Int[], DAExpCost=Float64[], NomGap=Float64[], QuadGap=Float64[], LinGap=Float64[])
+## DRCC Model Figure 2: Risk factor vs. DA Cost
+m2_riskfactor = DataFrame(Epsilon=Float64[], Confidence=Float64[], Feasibility=Int[], DAExpCost=Float64[])
 for RiskFactor in range(0.04, 0.25, step=0.01)
     (m2_da_status, m2_da_cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
-    gap = calculate_exactness(m2_ng_pre, m2_ng_flows, m2_ng_rho,m2_ng_gamma)
     if m2_da_status != MOI.OPTIMAL
         println("Not DA feasible for RiskFactor =", RiskFactor)
-        push!(m2_riskfactor,[RiskFactor, (1-RiskFactor), 0, Inf, Inf, Inf, Inf])
+        push!(m2_riskfactor,[RiskFactor, (1-RiskFactor), 0, Inf])
     elseif m2_da_status == MOI.OPTIMAL
-        push!(m2_riskfactor,[RiskFactor, (1-RiskFactor), 1, m2_da_cost, gap[1], gap[2], gap[3]])
+        push!(m2_riskfactor,[RiskFactor, (1-RiskFactor), 1, m2_da_cost])
     end
 end
 @show m2_riskfactor
 =#
 
-## -------------
+# Fig.3 : Gather results for the optimal policies allocations plot
+RiskFactor = 0.05
+(m2_da_status, m2_da_cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(RiskFactor)
+
+#Gather indices of generators which are NGFPPs and which are non-NGFPPs
+p_nonGF = []
+α_nonGF = []
+p_GF = []
+α_GF = []
+for t=1:Nt
+    push!(α_nonGF, sum(m2_el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
+    push!(p_nonGF, sum(m2_el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum==0))
+    push!(α_GF, sum(m2_el_alpha[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
+    push!(p_GF, sum(m2_el_prod[i,t] for i=1:Np if gen_data[i].ngBusNum!=0))
+end
+
+total_linepack = []
+for t=1:Nt
+    push!(total_linepack, round(sum(linepack[:,t]), digits=2))
+end

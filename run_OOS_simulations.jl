@@ -1,6 +1,6 @@
 # Running out of Sample Simulations and gathering results
 
-using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools
+using JuMP, Distributions, LinearAlgebra, DataFrames, Mosek, MosekTools, Ipopt
 
 using CSV, DataFrames
 
@@ -37,8 +37,7 @@ Nng_bus = length(ngBus_data)    #number of gas buses (gnode)
 
 Nt = 24                     #Time periods
 
-C_shed_el = 5000
-C_shed_ng = 5000
+C_shed = 2000
 C_spill = 0
 
 ##==== Network Data Pre-processing for PTDF Formulation =====##
@@ -59,7 +58,7 @@ for d in 1:size(PTDF_load,2)
 end
 PL = zeros(Nel_line,1)      #Vector of Line Flow Limits
 for l in 1:Nel_line
-    PL[l,1] = elLine_data[l].f̅
+    PL[l,1] = elLine_data[l].f̅ + 50
 end
 LoadShare = zeros(size(PTDF_load,2), 1)  #Vector of LoadShares of each load
 for d in 1:size(PTDF_load,2)
@@ -165,7 +164,7 @@ function unidir_deterministic_redispatch(m1_elprod, m1_elflows, m1_windgen, m1_n
 end
 #Testing the function, single run only
 (m1_rd_status, m1_rd_cost, m1_rd_p_adj, m1_lshed, m1_wspill, m1_rd_qin_adj, m1_rd_qout_adj, m1_rd_q_adj, m1_rd_h_adj, m1_rd_pr_adj, m1_g_adj) = unidir_deterministic_redispatch(m1_elprod, m1_elflows, m1_windgen, m1_ng_lmp, m1_ng_pre, m1_ng_flows, m1_ng_prod, 5)
-=#
+
 #Redispatch in each of the scenarios and pressure adjustments
 #=
 #running for multiple scenarios
@@ -184,11 +183,12 @@ end
 
 @show m1_scen_res
 =#
+=#
 
 ## ========================== REDISPATCH FOR DRCC: M2 ================================= ##
 
-include("M2a_Final_DRCC_McCormick.jl")
-(status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG(0)
+include("main.jl")
+(status, cost, m2_el_prod, m2_el_alpha, m2_el_lmp_da, m2_el_lmp_rt, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, ng_lmp_da, ng_lmp_rt, linepack) = unidir_DRCC_McCormick_SOCP_EL_NG()
 
 function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
     if InSample == 1
@@ -199,6 +199,7 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     Δ = []     #Realized net system deviation
     for t=1:Nt
         push!(Δ, (sum(w_hat[i,t] for i in 1:Nw) - (sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i = 1:Nw))))
+        #push!(Δ, 0)
     end
 
     #Check Feasibility of line-flows
@@ -215,16 +216,34 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
 
     #NG adjustment variables
     @variable(m2_rt, pr_rt[1:Nng_bus, t=1:Nt])
-    @variable(m2_rt, q_rt[1:Nng_line, t=1:Nt] >=0)
-    @variable(m2_rt, q_in_rt[1:Nng_line, t=1:Nt] >=0)
-    @variable(m2_rt, q_out_rt[1:Nng_line, t=1:Nt] >=0)
+    @variable(m2_rt, 0 <= q_rt[1:Nng_line, t=1:Nt] <= 1e6)
+    @variable(m2_rt, 0 <= q_in_rt[1:Nng_line, t=1:Nt] <=1e6)
+    @variable(m2_rt, 0 <= q_out_rt[1:Nng_line, t=1:Nt] <= 1e6)
     @variable(m2_rt, h_rt[1:Nng_line, t=1:Nt])
     @variable(m2_rt, g_rt[1:Ng, t=1:Nt])
     @variable(m2_rt, g_shed[1:Nng_bus, t=1:Nt])
 
-    @objective(m2_rt, Min, sum(sum(C_shed_el*l_shed[elnode,t] for elnode = 1: Nel_bus)
+    #Slack variables
+    #@variable(m2_rt, slack_wm[1:Nng_line, t=1:Nt])
+    #@variable(m2_rt, 1e6 >= slack_lp_pos[1:Nng_line, t=1:Nt] >=0)
+    #@variable(m2_rt, 1e6 >= slack_lp_neg[1:Nng_line, t=1:Nt] >=0)
+    #@variable(m2_rt, 1e6 >= slack_lp_def_pos[1:Nng_line, t=1:Nt] >=0)
+    #@variable(m2_rt, 1e6 >= slack_lp_def_neg[1:Nng_line, t=1:Nt] >=0)
+
+
+    #@objective(m2_rt, Min, 1)
+    #@objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1: Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) + sum(100*g_shed[gnode,t] for gnode = 1:Nng_bus) for t=1:Nt))
+    #@objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1:Nel_bus) + sum(C_spill*w_spill[i,t] for i = 1:Nw) for t=1:Nt))
+
+
+    @objective(m2_rt, Min, sum(sum(C_shed*l_shed[elnode,t] for elnode = 1: Nel_bus)
                                     + sum(C_spill*w_spill[i,t] for i = 1:Nw)
-                                    + sum(C_shed_ng*g_shed[gnode,t] for gnode = 1:Nng_bus)
+                                    + sum(1e3*g_shed[gnode,t] for gnode = 1:Nng_bus)
+                                    #+ sum(1e2*slack_lp_pos[pl,t] for pl=1:Nng_line)
+                                    #+ sum(1e2*slack_lp_neg[pl,t] for pl=1:Nng_line)
+                                    #+ sum(1e2*slack_lp_def_pos[pl,t] for pl=1:Nng_line)
+                                    #+ sum(1e2*slack_lp_def_neg[pl,t] for pl=1:Nng_line)
+                                    #+ sum(1e6*slack_wm[pl,t] for pl=1:Nng_line)
                                     for t=1:Nt))
 
     ###-----EL Constraints----###
@@ -232,14 +251,15 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     @constraint(m2_rt, ϕ_ract_bds[i=1:Np, t=1:Nt], gen_data[i].p̲ <= p_rt[i,t] <= gen_data[i].p̅)
     @constraint(m2_rt, ϕ_l_shed[elnode=1:Nel_bus, t=1:Nt], 0 <= l_shed[elnode,t] <= elBus_data[elnode].elLoadShare*hourly_demand[t,2])
     @constraint(m2_rt, ϕ_w_spill[i=1:Nw, t=1:Nt], 0 <= w_spill[i,t] <= wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1])
+    #@constraint(m2_rt, ϕ_w_spill[i=1:Nw, t=1:Nt], 0 <= w_spill[i,t] <= w_hat[i,t])
 
 
     @constraint(m2_rt, el_f_def[l=1:Nel_line, t=1:Nt], f_rt[l,t] == ν[elLine_data[l].b_f,elLine_data[l].b_t]*(θ_rt[elLine_data[l].b_f,t] - θ_rt[elLine_data[l].b_t,t]))
     @constraint(m2_rt, el_f_lim_rt[l=1:Nel_line,t=1:Nt], -f̅[elLine_data[l].b_f, elLine_data[l].b_t] <= f_rt[l,t] <= f̅[elLine_data[l].b_f, elLine_data[l].b_t])
 
 
-
     @constraint(m2_rt, λ_el_rt[elnode=1:Nel_bus, t=1:Nt], sum(p_rt[i,t] for i in 1:Np if gen_data[i].elBusNum==elnode)
+                                                        #+ sum(w_hat[i,t] for i in 1:Nw if wind_data[i].elBusNum==elnode)
                                                         + sum(wind_simdata[(wind_simdata.WFNum.==i) .& (wind_simdata.ScenNum .== Scenario), t][1] for i in 1:Nw if wind_data[i].elBusNum==elnode)
                                                         - sum(w_spill[i,t] for i=1:Nw if wind_data[i].elBusNum==elnode)
                                                         + l_shed[elnode,t]
@@ -254,37 +274,38 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
     @constraint(m2_rt, ϕ_ng_lshed[gnode=1:Nng_bus, t=1:Nt], 0 <= g_shed[gnode,t] <= ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
     #2. Nodal Pressure Constraints
-    #@constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
+    @constraint(m2_rt, ϕ_pr_rt[gnode=1:Nng_bus, t=1:Nt], pr_rt[gnode,t] == m2_ng_pre[gnode,t] + Δ[t]*m2_ng_rho[gnode,t])
 
     #3. Pipelines with Compressors
-    #for pl=1:Nng_line
-    #    if ngLine_data[pl].Γ_mu != 1
-    #        @constraint(m2_rt,[t=1:Nt], pr_rt[ngLine_data[pl].ng_t,t] <= ngLine_data[pl].Γ_mu*pr_rt[ngLine_data[pl].ng_f,t])
-    #    end
-    #end
+    for pl=1:Nng_line
+        if ngLine_data[pl].Γ_mu != 1
+            @constraint(m2_rt,[t=1:Nt], pr_rt[ngLine_data[pl].ng_t,t] <= ngLine_data[pl].Γ_mu*pr_rt[ngLine_data[pl].ng_f,t])
+        end
+    end
 
     #5. Definition of average flow in a pipeline
     #@constraint(m2_rt, q_value_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == m2_ng_flows[pl,t] + Δ[t]*m2_ng_gamma[pl,t])
-    #@constraint(m2_rt, q_value_rt_try[pl=1:Nng_line, t=1:Nt], q_rt[pl,t] == 0.5*(q_in_rt[pl,t] + q_out_rt[pl,t]))
-
     #@constraint(m2_rt, q_in_value_rt[pl=1:Nng_line, t=1:Nt], q_in_rt[pl,t] == m2_ng_inflows[pl,t] + Δ[t]*m2_ng_gamma_in[pl,t])
     #@constraint(m2_rt, q_out_value_rt[pl=1:Nng_line, t=1:Nt], q_out_rt[pl,t] == m2_ng_outflows[pl,t] + Δ[t]*m2_ng_gamma_out[pl,t])
 
     #6a. Weymouth equation - convex relaxation of equality into a SOC, ignoring the concave part of the cone
     #uncomment if using MOSEK - SecondOrderCone special formulation
     #@constraint(m2_rt, wm_rt[pl=1:Nng_line, t=1:Nt], q_rt[pl,t]^2 ==  (ngLine_data[pl].K_mu)^2*(pr_rt[ngLine_data[pl].ng_f,t]^2  - pr_rt[ngLine_data[pl].ng_t,t]^2))
-    #@constraint(m2_rt, wm_rt_eq[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
+    @constraint(m2_rt, wm_rt_eq[pl=1:Nng_line, t=1:Nt], [ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_f,t], q_rt[pl,t], ngLine_data[pl].K_mu*pr_rt[ngLine_data[pl].ng_t,t]] in SecondOrderCone())
 
     #7. Linepack Definition
-    #@constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]))
+    #@constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]) + slack_lp_def_pos[pl,t] - slack_lp_def_neg[pl,t])
+    @constraint(m2_rt, lp_def_rt[pl=1:Nng_line,t=1:Nt], h_rt[pl,t] == ngLine_data[pl].K_h*0.5*(pr_rt[ngLine_data[pl].ng_f,t] + pr_rt[ngLine_data[pl].ng_t,t]))
 
     #8. Linepack Operation Dynamics Constraints: for t=1, for t>1 and for t=T
     for pl=1:Nng_line
         for t̂=1:Nt
             if t̂ == 1      #First Hour
+                #@constraint(m2_rt, h_rt[pl,t̂] == ngLine_data[pl].H_ini +  q_in_rt[pl,t̂] - q_out_rt[pl,t̂] + slack_lp_pos[pl,t̂] - slack_lp_neg[pl,t̂])
                 @constraint(m2_rt, h_rt[pl,t̂] == ngLine_data[pl].H_ini + q_in_rt[pl,t̂] - q_out_rt[pl,t̂])
             end
             if t̂ != 1 #All hours other than first
+                #@constraint(m2_rt, h_rt[pl,t̂] == h_rt[pl,t̂-1] + q_in_rt[pl,t̂] - q_out_rt[pl,t̂] + slack_lp_pos[pl,t̂] - slack_lp_neg[pl,t̂])
                 @constraint(m2_rt, h_rt[pl,t̂] == h_rt[pl,t̂-1] + q_in_rt[pl,t̂] - q_out_rt[pl,t̂])
             end
             if t̂ == Nt #Final Hour
@@ -293,7 +314,6 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
         end
     end
 
-
     #9. Nodal NG balance
     @constraint(m2_rt, λ_ng_rt[gnode=1:Nng_bus, t=1:Nt], sum(g_rt[k,t] for k in 1:Ng if ng_prods_data[k].ngProdBusNum==gnode)
                                                 - sum(gen_data[i].ngConvEff*p_rt[i,t] for i in 1:Np if gen_data[i].ngBusNum==gnode)
@@ -301,54 +321,24 @@ function undir_DRCC_rt_operation(InSample, w_hat, m2_el_prod, m2_el_alpha, m2_ng
                                                 + g_shed[gnode,t]
                                                 == ngBus_data[gnode].ngLoadShare*hourly_demand[t,3])
 
-
     @time optimize!(m2_rt)
     status = termination_status(m2_rt)
     println(status)
     println(raw_status(m2_rt))
 
     @info("DRCC RT EL Redispatch Model status ---> $(status)")
-    #println("Inflows RT:", minimum(JuMP.value.(pr_rt)))
-    #return status
-    return Δ, status, JuMP.objective_value(m2_rt), JuMP.value.(p_rt), JuMP.value.(l_shed), JuMP.value.(w_spill), JuMP.value.(θ_rt), JuMP.value.(g_shed), JuMP.value.(pr_rt), JuMP.value.(g_rt), JuMP.value.(q_in_rt), JuMP.value.(q_out_rt), JuMP.value.(q_rt)
-end
 
+    return Δ, status, JuMP.objective_value(m2_rt), round.(JuMP.value.(p_rt), digits=2), round.(JuMP.value.(l_shed), digits=2),  round.(JuMP.value.(w_spill), digits=2), round.(JuMP.value.(θ_rt), digits=2), round.(JuMP.value.(g_shed), digits=2), round.(JuMP.value.(pr_rt), digits=2), round.(JuMP.value.(g_rt), digits=2), round.(JuMP.value.(q_in_rt), digits=2), round.(JuMP.value.(q_out_rt), digits=2), round.(JuMP.value.(h_rt), digits=2)
+end
 #Testing the function - single run only
-#(model, Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_q_rt) = undir_DRCC_rt_operation(0, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 20)
+(Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_linepack_rt) = undir_DRCC_rt_operation(1, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, 2)
 
 #=
-#calculate quality of exactness of approximation :
-wm_exact_rt=DataFrame(t=Any[],pl=Any[], LHS=Any[], RHS=Any[], diff=[], diffPer=Any[])
-for hour = 1:Nt
-    for pl = 1:Nng_line
-        lhs_val= round(m2_ng_q_rt[pl,hour]^2,digits=2)
-        rhs_val = round(ngLine_data[pl].K_mu^2*(m2_ng_pre_rt[ngLine_data[pl].ng_f,hour]^2 - m2_ng_pre_rt[ngLine_data[pl].ng_t,hour]^2), digits=2)
-        push!(wm_exact_rt, [hour, pl, lhs_val, rhs_val, abs(lhs_val - rhs_val), 100*abs(lhs_val - rhs_val)/(lhs_val)])
-    end
-end
-#@show wm_exact
-println("Total Absolute Error RT Flows:", sum(wm_exact_rt[:,5]))
-println("RMS Error RT Flows:", sqrt(sum(wm_exact_rt[:,5])/(Nt+Nng_line)))
-println("NRMS Error RT Flows:", sqrt(sum(wm_exact_rt[:,5])/(Nt+Nng_line))/mean(sqrt.(abs.(wm_exact_rt[:,4]))))
-
-#Checking the value of Linepack
-h_rt_val = zeros(1:Nng_line,1:Nt)
-for hour=1:Nt
-    for pl=1:Nng_line
-        if hour ==1
-            h_rt_val[pl,hour] = ngLine_data[pl].H_ini + m2_ng_q_in_rt[pl,hour] - m2_ng_q_out_rt[pl,hour]
-        else
-            h_rt_val[pl,hour] =  h_rt_val[pl,hour-1] + m2_ng_q_in_rt[pl,hour] - m2_ng_q_out_rt[pl,hour]
-        end
-    end
-end
-=#
-
 #running for multiple scenarios
 m2_scen_res=DataFrame(ScenNum=Int[], RedispatchCost=Float64[], WindSpilled=Float64[], ELLoadShed=Float64[], NGLoadShed=Float64[])
-InSample = 0
-for Scenario = 1:10
-    (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_q_in_rt, m2_ng_q_out_rt, m2_ng_q_rt) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
+InSample = 1
+for Scenario = 1:100
+    (Δ, m2_rd_status, m2_rd_cost, m2_rd_p_adj, m2_lshed, m2_wspill, m2_vangs, m2_gshed, m2_ng_pre_rt, m2_ng_prod_rt, m2_ng_linepack_rt) = undir_DRCC_rt_operation(InSample, w_hat,  m2_el_prod, m2_el_alpha, m2_ng_prod, m2_ng_beta, m2_ng_pre, m2_ng_rho, m2_ng_flows, m2_ng_gamma, m2_ng_inflows, m2_ng_gamma_in, m2_ng_outflows, m2_ng_gamma_out, Scenario)
     println("Actual System Deviation is: ", Δ)
     if m2_rd_status != MOI.OPTIMAL
         println("Not RT feasible for Scenario =", Scenario)
@@ -361,7 +351,7 @@ for Scenario = 1:10
     end
 end
 @show m2_scen_res
-
+=#
 
 
 

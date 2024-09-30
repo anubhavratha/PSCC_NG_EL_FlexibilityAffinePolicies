@@ -23,7 +23,7 @@ FileNameBase_Scenarios = "wp-scen-zone"
 
 # !!!!! MUST BE CHANGED WITH CHANGE IN NETWORK AND SIMULATION PARAMETERS!!!!
 NumZones = 15   #Total Number of Zones for which data is available - Constant!
-NumHours = 24
+NumHours = 1
 
 #Number of WindFarms and Location
 NumWindFarms = 2
